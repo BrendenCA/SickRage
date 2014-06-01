@@ -10,4 +10,4 @@ branches:
     - master
 
 before_script: cd tests
-script: ./all_tests.py
+script: python all_tests.py
