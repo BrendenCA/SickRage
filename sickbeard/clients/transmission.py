@@ -1,20 +1,20 @@
 # Author: Mr_Orange <mr_orange@hotmail.it>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import re
 import json
@@ -80,30 +80,20 @@ class TransmissionAPI(GenericClient):
 
     def _set_torrent_ratio(self, result):
 
-        ratio = ''
+        ratio = None
         if result.ratio:
             ratio = result.ratio
-        elif sickbeard.TORRENT_RATIO:
-            ratio = sickbeard.TORRENT_RATIO
-        if ratio:
-            try:
-                float(ratio)
-            except ValueError:
-                logger.log(self.name + u': Invalid Ratio. "' + ratio + u'" is not a number', logger.ERROR)
-                return False
 
         torrent_id = self._get_torrent_hash(result)
 
-        if ratio == '':
-            # Use global settings
-            ratio = None
-            mode = 0
-        elif float(ratio) == 0:
-            ratio = 0
-            mode = 2
-        elif float(ratio) > 0:
-            ratio = float(ratio)
-            mode = 1  # Stop seeding at seedRatioLimit
+        mode = 0
+        if ratio:
+            if float(ratio) == 0:
+                ratio = 0
+                mode = 2
+            elif float(ratio) > 0:
+                ratio = float(ratio)
+                mode = 1  # Stop seeding at seedRatioLimit
 
         arguments = {'ids': [torrent_id],
                      'seedRatioLimit': ratio,

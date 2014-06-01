@@ -1,20 +1,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
@@ -155,8 +155,8 @@ def snatchEpisode(result, endStatus=SNATCHED):
 
     if sickbeard.USE_FAILED_DOWNLOADS:
         failed_history.logSnatch(result)
-    else:
-        ui.notifications.message('Episode snatched', result.name)
+
+    ui.notifications.message('Episode snatched', result.name)
 
     history.logSnatch(result)
 
@@ -316,36 +316,134 @@ def filterSearchResults(show, results):
     return foundResults
 
 
-def searchProviders(queueItem, show, season, episodes, seasonSearch=False, manualSearch=False):
-    logger.log(u"Searching for stuff we need from " + show.name + " season " + str(season))
+def searchForNeededEpisodes(episodes):
+    foundResults = {}
+
+    didSearch = False
+
+    # ask all providers for any episodes it finds
+    origThreadName = threading.currentThread().name
+    providers = [x for x in sickbeard.providers.sortedProviderList() if x.isActive() and not x.backlog_only]
+    for curProviderCount, curProvider in enumerate(providers):
+        threading.currentThread().name = origThreadName + " :: [" + curProvider.name + "]"
+
+        try:
+            logger.log(u"Updating RSS cache ...")
+            curProvider.cache.updateCache()
+            logger.log(u"Searching RSS cache ...")
+            curFoundResults = curProvider.searchRSS(episodes)
+        except exceptions.AuthException, e:
+            logger.log(u"Authentication error: " + ex(e), logger.ERROR)
+            if curProviderCount != len(providers):
+                continue
+            break
+        except Exception, e:
+            logger.log(u"Error while searching " + curProvider.name + ", skipping: " + ex(e), logger.ERROR)
+            if curProviderCount != len(providers):
+                continue
+            break
+
+        didSearch = True
+
+        # pick a single result for each episode, respecting existing results
+        for curEp in curFoundResults:
+
+            if curEp.show.paused:
+                logger.log(
+                    u"Show " + curEp.show.name + " is paused, ignoring all RSS items for " + curEp.prettyName(),
+                    logger.DEBUG)
+                continue
+
+            # find the best result for the current episode
+            #bestResult = None
+            #for curResult in curFoundResults[curEp]:
+            #    if not bestResult or bestResult.quality < curResult.quality:
+            #        bestResult = curResult
+
+            bestResult = pickBestResult(curFoundResults[curEp], curEp.show)
+
+            # if all results were rejected move on to the next episode
+            if not bestResult:
+                logger.log(u"All found results for " + curEp.prettyName() + " were rejected.", logger.DEBUG)
+                continue
+
+            # if it's already in the list (from another provider) and the newly found quality is no better then skip it
+            if curEp in foundResults and bestResult.quality <= foundResults[curEp].quality:
+                continue
+
+            foundResults[curEp] = bestResult
+
+    if not didSearch:
+        logger.log(
+            u"No NZB/Torrent providers found or enabled in the sickrage config. Please check your settings.",
+            logger.ERROR)
+
+    return foundResults.values() if len(foundResults) else {}
+
+
+def searchProviders(show, season, episodes, manualSearch=False):
+    foundResults = {}
+    finalResults = []
+
+    # check if we want to search for season packs instead of just season/episode
+    seasonSearch = False
+    seasonEps = show.getAllEpisodes(season)
+    if len(seasonEps) == len(episodes):
+        seasonSearch = True
 
     providers = [x for x in sickbeard.providers.sortedProviderList() if x.isActive()]
 
     if not len(providers):
         logger.log(u"No NZB/Torrent providers found or enabled in the sickrage config. Please check your settings.",
                    logger.ERROR)
-        return queueItem
+        return
 
-    foundResults = {}
+    origThreadName = threading.currentThread().name
     for providerNum, provider in enumerate(providers):
+        threading.currentThread().name = origThreadName + " :: [" + provider.name + "]"
         foundResults.setdefault(provider.name, {})
+        searchCount = 0
 
-        try:
-            curResults = provider.findSearchResults(show, season, episodes, seasonSearch, manualSearch)
-        except exceptions.AuthException, e:
-            logger.log(u"Authentication error: " + ex(e), logger.ERROR)
-            continue
-        except Exception, e:
-            logger.log(u"Error while searching " + provider.name + ", skipping: " + ex(e), logger.ERROR)
-            logger.log(traceback.format_exc(), logger.DEBUG)
-            continue
+        search_mode = 'eponly'
+        if seasonSearch and provider.search_mode == 'sponly':
+            search_mode = provider.search_mode
 
-        if not len(curResults):
-            continue
+        while(True):
+            searchCount += 1
 
-        foundResults[provider.name] = filterSearchResults(show, curResults)
+            if search_mode == 'sponly':
+                logger.log(u"Searching for " + show.name + " Season " + str(season) + " pack")
+            else:
+                logger.log(u"Searching for episodes we need from " + show.name + " Season " + str(season))
+
+            try:
+                searchResults = provider.findSearchResults(show, season, episodes, search_mode, manualSearch)
+            except exceptions.AuthException, e:
+                logger.log(u"Authentication error: " + ex(e), logger.ERROR)
+                break
+            except Exception, e:
+                logger.log(u"Error while searching " + provider.name + ", skipping: " + ex(e), logger.ERROR)
+                break
+
+            if len(searchResults):
+                foundResults[provider.name] = filterSearchResults(show, searchResults)
+                break
+            elif not provider.search_fallback or searchCount == 2:
+                break
+
+            if search_mode == 'sponly':
+                logger.log(u"FALLBACK EPISODE SEARCH INITIATED ...")
+                search_mode = 'eponly'
+            else:
+                logger.log(u"FALLBACK SEASON PACK SEARCH INITIATED ...")
+                search_mode = 'sponly'
+
+        # skip to next provider if we have no results to process
         if not len(foundResults[provider.name]):
-            continue
+            if providerNum != len(providers):
+                continue
+            break
+
 
         anyQualities, bestQualities = Quality.splitQuality(show.quality)
 
@@ -395,8 +493,8 @@ def searchProviders(queueItem, show, season, episodes, seasonSearch=False, manua
                 for curEpNum in allEps:
                     epObjs.append(show.getEpisode(season, curEpNum))
                 bestSeasonNZB.episodes = epObjs
-                queueItem.results = [bestSeasonNZB]
-                return queueItem
+
+                return [bestSeasonNZB]
 
             elif not anyWanted:
                 logger.log(
@@ -515,7 +613,7 @@ def searchProviders(queueItem, show, season, episodes, seasonSearch=False, manua
                         del foundResults[provider.name][epNum]
 
         # of all the single ep results narrow it down to the best one for each episode
-        queueItem.results += set(multiResults.values())
+        finalResults += set(multiResults.values())
         for curEp in foundResults[provider.name]:
             if curEp in (MULTI_EP_RESULT, SEASON_RESULT):
                 continue
@@ -531,26 +629,25 @@ def searchProviders(queueItem, show, season, episodes, seasonSearch=False, manua
 
             # add result if its not a duplicate and
             found = False
-            for i, result in enumerate(queueItem.results):
+            for i, result in enumerate(finalResults):
                 for bestResultEp in bestResult.episodes:
                     if bestResultEp in result.episodes:
                         if result.quality < bestResult.quality:
-                            queueItem.results.pop(i)
+                            finalResults.pop(i)
                         else:
                             found = True
             if not found:
-                queueItem.results += [bestResult]
-
+                finalResults += [bestResult]
 
         # check that we got all the episodes we wanted first before doing a match and snatch
         wantedEpCount = 0
         for wantedEp in episodes:
-            for result in queueItem.results:
+            for result in finalResults:
                 if wantedEp in result.episodes and isFinalResult(result):
                     wantedEpCount += 1
 
         # make sure we search every provider for results unless we found everything we wanted
-        if providerNum != len(providers) and wantedEpCount != len(episodes):
-            continue
+        if providerNum == len(providers) or wantedEpCount == len(episodes):
+            break
 
-    return queueItem
+    return finalResults

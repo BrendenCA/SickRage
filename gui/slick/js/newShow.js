@@ -44,7 +44,7 @@ $(document).ready(function () {
         searchRequestXhr = $.ajax({
             url: sbRoot + '/home/addShows/searchIndexersForShowName',
             data: {'search_term': $('#nameToSearch').val(), 'lang': $('#indexerLangSelect').val(), 'indexer': $('#providedIndexer').val()},
-            timeout: 10000,
+            timeout: parseInt($('#indexer_timeout').val(), 10) * 1000,
             dataType: 'json',
             error: function () {
                 $('#searchResults').empty().html('search timed out, try again or try another indexer');

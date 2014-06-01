@@ -1,20 +1,20 @@
 # Author: Harm van Tilborg <harm@zeroxcool.net>
 # URL: https://github.com/hvt/Sick-Beard/tree/dtt
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import urllib
 import sickbeard
@@ -32,11 +32,16 @@ class DTTProvider(generic.TorrentProvider):
     def __init__(self):
         generic.TorrentProvider.__init__(self, "DailyTvTorrents")
         self.supportsBacklog = True
+
+        self.enabled = False
+        self.ratio = None
+
         self.cache = DTTCache(self)
+
         self.url = 'http://www.dailytvtorrents.org/'
 
     def isEnabled(self):
-        return sickbeard.DTT
+        return self.enabled
 
     def imageName(self):
         return 'dailytvtorrents.gif'
@@ -46,8 +51,8 @@ class DTTProvider(generic.TorrentProvider):
         quality = Quality.sceneQuality(url)
         return quality
 
-    def getSearchResults(self, show, season, episodes, seasonSearch=False, manualSearch=False):
-        return generic.TorrentProvider.findSearchResults(self, show, season, episodes, seasonSearch, manualSearch)
+    def findSearchResults(self, show, season, episodes, search_mode, manualSearch=False):
+        return generic.TorrentProvider.findSearchResults(self, show, season, episodes, search_mode, manualSearch)
 
     def _dtt_show_id(self, show_name):
         return sanitizeSceneName(show_name).replace('.', '-').lower()

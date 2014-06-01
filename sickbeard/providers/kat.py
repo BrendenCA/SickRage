@@ -2,20 +2,20 @@
 # Author: Mr_Orange <mr_orange@hotmail.it>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
@@ -30,7 +30,7 @@ import urlparse
 
 import sickbeard
 import generic
-from sickbeard.common import Quality, Overview
+from sickbeard.common import Quality, cpu_presets
 from sickbeard.name_parser.parser import NameParser, InvalidNameException
 from sickbeard import logger
 from sickbeard import tvcache
@@ -56,6 +56,12 @@ class KATProvider(generic.TorrentProvider):
 
         self.supportsBacklog = True
 
+        self.enabled = False
+        self.confirmed = False
+        self.ratio = None
+        self.minseed = None
+        self.minleech = None
+
         self.cache = KATCache(self)
 
         self.url = 'http://kickass.to/'
@@ -63,7 +69,7 @@ class KATProvider(generic.TorrentProvider):
         self.searchurl = self.url + 'usearch/%s/?field=seeders&sorder=desc'  #order by seed
 
     def isEnabled(self):
-        return sickbeard.KAT
+        return self.enabled
 
     def imageName(self):
         return 'kat.png'
@@ -171,13 +177,13 @@ class KATProvider(generic.TorrentProvider):
         if not (ep_obj.show.air_by_date or ep_obj.show.sports):
             for show_name in set(allPossibleShowNames(self.show)):
                 if ep_obj.show.air_by_date or ep_obj.show.sports:
-                    ep_string = show_name + str(ep_obj.airdate)[:7] + ' category:tv'  #2) showName Season X
+                    ep_string = show_name + str(ep_obj.airdate).split('-')[0] + ' category:tv'  #2) showName Season X
                 else:
                     ep_string = show_name + ' S%02d' % int(ep_obj.scene_season) + ' -S%02d' % int(ep_obj.scene_season) + 'E' + ' category:tv'  #1) showName SXX -SXXE
                 search_string['Season'].append(ep_string)
 
                 if ep_obj.show.air_by_date or ep_obj.show.sports:
-                    ep_string = show_name + ' Season ' + str(ep_obj.airdate)[:7] + ' category:tv'  #2) showName Season X
+                    ep_string = show_name + ' Season ' + str(ep_obj.airdate).split('-')[0] + ' category:tv'  #2) showName Season X
                 else:
                     ep_string = show_name + ' Season ' + str(ep_obj.scene_season) + ' -Ep*' + ' category:tv'  #2) showName Season X
                 search_string['Season'].append(ep_string)
@@ -258,10 +264,10 @@ class KATProvider(generic.TorrentProvider):
                         except (AttributeError, TypeError):
                             continue
 
-                        if mode != 'RSS' and seeders == 0:
+                        if mode != 'RSS' and (seeders == 0 or seeders < self.minseed or leechers < self.minleech):
                             continue
 
-                        if sickbeard.KAT_VERIFIED and not verified:
+                        if self.confirmed and not verified:
                             logger.log(
                                 u"KAT Provider found result " + title + " but that doesn't seem like a verified result so I'm ignoring it",
                                 logger.DEBUG)
@@ -347,8 +353,13 @@ class KATProvider(generic.TorrentProvider):
         try:
             r = self.session.get('http://torcache.net/torrent/' + torrent_hash + '.torrent', verify=False)
         except Exception, e:
-            logger.log("Unable to connect to Torcache: " + ex(e), logger.ERROR)
-            return False
+            logger.log("Unable to connect to TORCACHE: " + ex(e), logger.ERROR)
+            try:
+                logger.log("Trying TORRAGE cache instead")
+                r = self.session.get('http://torrage.com/torrent/' + torrent_hash + '.torrent', verify=False)
+            except Exception, e:
+                logger.log("Unable to connect to TORRAGE: " + ex(e), logger.ERROR)
+                return False
 
         if not r.status_code == 200:
             return False
@@ -387,6 +398,7 @@ class KATProvider(generic.TorrentProvider):
 
         for sqlshow in sqlResults:
             self.show = curshow = helpers.findCertainShow(sickbeard.showList, int(sqlshow["showid"]))
+            if not self.show: continue
             curEp = curshow.getEpisode(int(sqlshow["season"]), int(sqlshow["episode"]))
 
             searchString = self._get_episode_search_strings(curEp, add_string='PROPER|REPACK')
@@ -398,7 +410,7 @@ class KATProvider(generic.TorrentProvider):
         return results
 
     def seedRatio(self):
-        return sickbeard.KAT_RATIO
+        return self.ratio
 
 
 class KATCache(tvcache.TVCache):
@@ -411,6 +423,10 @@ class KATCache(tvcache.TVCache):
 
     def updateCache(self):
 
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
+
         if not self.shouldUpdate():
             return
 
@@ -421,9 +437,6 @@ class KATCache(tvcache.TVCache):
             self.setLastUpdate()
         else:
             return []
-
-        logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-        self._clearCache()
 
         cl = []
         for result in rss_results:

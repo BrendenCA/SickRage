@@ -1,20 +1,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import os.path
 import operator
@@ -25,7 +25,7 @@ import uuid
 from sickbeard import version
 
 INSTANCE_ID = str(uuid.uuid1())
-USER_AGENT = ('Sick Beard/' + version.SICKBEARD_VERSION.replace(' ', '-') +
+USER_AGENT = ('SickRage/' + version.SICKBEARD_VERSION.replace(' ', '-') +
               ' (' + platform.system() + '; ' + platform.release() +
               '; ' + INSTANCE_ID + ')')
 
@@ -36,6 +36,11 @@ mediaExtensions = ['avi', 'mkv', 'mpg', 'mpeg', 'wmv',
                    'ogv', '3gp', 'webm']
 
 subtitleExtensions = ['srt', 'sub', 'ass', 'idx', 'ssa']
+
+cpu_presets = {'HIGH': 0.1,
+               'NORMAL': 0.05,
+               'LOW': 0.01
+}
 
 ### Other constants
 MULTI_EP_RESULT = -1
@@ -184,7 +189,7 @@ class Quality:
         elif checkName(["720p", "hdtv", "x264"], all) or checkName(["hr.ws.pdtv.x264"], any) and not checkName(
                 ["(1080)[pi]"], all):
             return Quality.HDTV
-        elif checkName(["720p|1080i", "hdtv", "mpeg-?2"], all) or checkName(["1080i.hdtv", "h.?264"], all):
+        elif checkName(["720p|1080i", "hdtv", "mpeg-?2"], all) or checkName(["1080[pi].hdtv", "h.?264"], all):
             return Quality.RAWHDTV
         elif checkName(["1080p", "hdtv", "x264"], all):
             return Quality.FULLHDTV

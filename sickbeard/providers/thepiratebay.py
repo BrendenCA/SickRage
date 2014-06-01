@@ -1,20 +1,20 @@
 # Author: Mr_Orange <mr_orange@hotmail.it>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
@@ -27,7 +27,7 @@ import datetime
 
 import sickbeard
 import generic
-from sickbeard.common import Quality
+from sickbeard.common import Quality, cpu_presets
 from sickbeard.name_parser.parser import NameParser, InvalidNameException
 from sickbeard import db
 from sickbeard import classes
@@ -43,18 +43,6 @@ from lib import requests
 from lib.requests import exceptions
 from lib.unidecode import unidecode
 
-proxy_dict = {
-    'Getprivate.eu (NL)': 'http://getprivate.eu/',
-    '15bb51.info (US)': 'http://15bb51.info/',
-    'Hideme.nl (NL)': 'http://hideme.nl/',
-    'Proxite.eu (DE)': 'http://proxite.eu/',
-    'Webproxy.cz (CZ)': 'http://webproxy.cz/',
-    '2me2u (CZ)': 'http://2me2u.me/',
-    'Interproxy.net (EU)': 'http://interproxy.net/',
-    'Unblockersurf.info (DK)': 'http://unblockersurf.info',
-    'Hiload.org (NL)': 'http://hiload.org',
-}
-
 
 class ThePirateBayProvider(generic.TorrentProvider):
     def __init__(self):
@@ -62,6 +50,12 @@ class ThePirateBayProvider(generic.TorrentProvider):
         generic.TorrentProvider.__init__(self, "ThePirateBay")
 
         self.supportsBacklog = True
+
+        self.enabled = False
+        self.ratio = None
+        self.confirmed = False
+        self.minseed = None
+        self.minleech = None
 
         self.cache = ThePirateBayCache(self)
 
@@ -74,7 +68,7 @@ class ThePirateBayProvider(generic.TorrentProvider):
         self.re_title_url = '/torrent/(?P<id>\d+)/(?P<title>.*?)//1".+?(?P<url>magnet.*?)//1".+?(?P<seeders>\d+)</td>.+?(?P<leechers>\d+)</td>'
 
     def isEnabled(self):
-        return sickbeard.THEPIRATEBAY
+        return self.enabled
 
     def imageName(self):
         return 'thepiratebay.png'
@@ -175,13 +169,13 @@ class ThePirateBayProvider(generic.TorrentProvider):
         search_string = {'Season': []}
         for show_name in set(allPossibleShowNames(self.show)) if not (ep_obj.show.air_by_date or ep_obj.show.sports) else []:
             if ep_obj.show.air_by_date or ep_obj.show.sports:
-                ep_string = show_name + str(ep_obj.airdate)[:7]
+                ep_string = show_name + str(ep_obj.airdate).split('-')[0]
             else:
                 ep_string = show_name + ' S%02d' % int(ep_obj.scene_season)  #1) showName SXX
             search_string['Season'].append(ep_string)
 
             if ep_obj.show.air_by_date or ep_obj.show.sports:
-                ep_string = show_name + ' Season ' + str(ep_obj.airdate)[:7]
+                ep_string = show_name + ' Season ' + str(ep_obj.airdate).split('-')[0]
             else:
                 ep_string = show_name + ' Season ' + str(ep_obj.scene_season) + ' -Ep*'  #2) showName Season X
 
@@ -253,11 +247,11 @@ class ThePirateBayProvider(generic.TorrentProvider):
                     leechers = int(torrent.group('leechers'))
 
                     #Filter unseeded torrent
-                    if mode != 'RSS' and seeders == 0:
+                    if mode != 'RSS' and (seeders == 0 or seeders < self.minseed or leechers < self.minleech):
                         continue
 
                         #Accept Torrent only from Good People for every Episode Search
-                    if sickbeard.THEPIRATEBAY_TRUSTED and re.search('(VIP|Trusted|Helper)', torrent.group(0)) is None:
+                    if self.confirmed and re.search('(VIP|Trusted|Helper)', torrent.group(0)) is None:
                         logger.log(u"ThePirateBay Provider found result " + torrent.group(
                             'title') + " but that doesn't seem like a trusted result so I'm ignoring it", logger.DEBUG)
                         continue
@@ -340,8 +334,13 @@ class ThePirateBayProvider(generic.TorrentProvider):
         try:
             r = self.session.get('http://torcache.net/torrent/' + torrent_hash + '.torrent', verify=False)
         except Exception, e:
-            logger.log("Unable to connect to Torcache: " + ex(e), logger.ERROR)
-            return False
+            logger.log("Unable to connect to TORCACHE: " + ex(e), logger.ERROR)
+            try:
+                logger.log("Trying TORRAGE cache instead")
+                r = self.session.get('http://torrage.com/torrent/' + torrent_hash + '.torrent', verify=False)
+            except Exception, e:
+                logger.log("Unable to connect to TORRAGE: " + ex(e), logger.ERROR)
+                return False
 
         if not r.status_code == 200:
             return False
@@ -379,6 +378,7 @@ class ThePirateBayProvider(generic.TorrentProvider):
 
         for sqlshow in sqlResults:
             self.show = curshow = helpers.findCertainShow(sickbeard.showList, int(sqlshow["showid"]))
+            if not self.show: continue
             curEp = curshow.getEpisode(int(sqlshow["season"]), int(sqlshow["episode"]))
 
             searchString = self._get_episode_search_strings(curEp, add_string='PROPER|REPACK')
@@ -390,7 +390,7 @@ class ThePirateBayProvider(generic.TorrentProvider):
         return results
 
     def seedRatio(self):
-        return sickbeard.THEPIRATEBAY_RATIO
+        return self.ratio
 
 
 class ThePirateBayCache(tvcache.TVCache):
@@ -403,6 +403,10 @@ class ThePirateBayCache(tvcache.TVCache):
 
     def updateCache(self):
 
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
+
         if not self.shouldUpdate():
             return
 
@@ -413,9 +417,6 @@ class ThePirateBayCache(tvcache.TVCache):
             self.setLastUpdate()
         else:
             return []
-
-        logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-        self._clearCache()
 
         cl = []
         for result in rss_results:
@@ -445,14 +446,28 @@ class ThePirateBayWebproxy:
         self.Type = 'GlypeProxy'
         self.param = 'browse.php?u='
         self.option = '&b=32'
+        self.enabled = False
+        self.url = None
+
+        self.urls = {
+            'Getprivate.eu (NL)': 'http://getprivate.eu/',
+            '15bb51.info (US)': 'http://15bb51.info/',
+            'Hideme.nl (NL)': 'http://hideme.nl/',
+            'Proxite.eu (DE)': 'http://proxite.eu/',
+            'Webproxy.cz (CZ)': 'http://webproxy.cz/',
+            '2me2u (CZ)': 'http://2me2u.me/',
+            'Interproxy.net (EU)': 'http://interproxy.net/',
+            'Unblockersurf.info (DK)': 'http://unblockersurf.info/',
+            'Hiload.org (NL)': 'http://hiload.org/',
+        }
 
     def isEnabled(self):
         """ Return True if we Choose to call TPB via Proxy """
-        return sickbeard.THEPIRATEBAY_PROXY
+        return self.enabled
 
     def getProxyURL(self):
         """ Return the Proxy URL Choosen via Provider Setting """
-        return str(sickbeard.THEPIRATEBAY_PROXY_URL)
+        return str(self.url)
 
     def _buildURL(self, url):
         """ Return the Proxyfied URL of the page """

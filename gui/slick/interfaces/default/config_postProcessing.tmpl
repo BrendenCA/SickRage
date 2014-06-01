@@ -37,7 +37,7 @@
 
                     <div class="component-group-desc">
                         <h3>Post-Processing</h3>
-                        <p>Settings that dictate how Sick Beard should process completed downloads.</p>
+                        <p>Settings that dictate how SickRage should process completed downloads.</p>
                     </div>
 
                     <fieldset class="component-group-list">
@@ -56,7 +56,7 @@
                             </label>
                             <label class="nocheck clearfix">
                                 <span class="component-title">&nbsp;</span>
-                                <span class="component-desc">Or if SABnzbd+ and Sick Beard are on different PCs.</span>
+                                <span class="component-desc">Or if SABnzbd+ and SickRage are on different PCs.</span>
                             </label>
                         </div>
        
@@ -82,7 +82,13 @@
                                 <span class="component-desc">What method should be used to put file in the TV directory?</span>
                             </label>
                         </div>
-
+                        <div class="field-pair">
+                            <input type="checkbox" name="skip_removed_files" id="skip_removed_files" #if $sickbeard.SKIP_REMOVED_FILES == True then "checked=\"checked\"" else ""# />
+                            <label class="clearfix" for="skip_removed_files">
+                                <span class="component-title">Skip Remove Detection</span>
+                                <span class="component-desc">Skip detection of removed files, so they don't get set to ignored?<br /><b>NOTE:</b> This may mean SickRage misses renames as well</span>
+                            </label>
+                        </div>
 						<div class="field-pair">
 						    <label class="nocheck clearfix">
 						        <span class="component-title">Extra Scripts</span>
@@ -94,7 +100,7 @@
 						    </label>
 						    <label class="nocheck clearfix">
 						        <span class="component-title">&nbsp;</span>
-						        <span class="component-desc"><b>NOTE:</b> Scripts are called after Sick Beard's own post-processing.</span>
+						        <span class="component-desc"><b>NOTE:</b> Scripts are called after SickRage's own post-processing.</span>
 						    </label>						    
 						</div>
 
@@ -144,6 +150,17 @@
                                 <span class="component-title">&nbsp;</span>
                                 <span class="component-desc">eg. NZBMedia w/ NZBGET, sabToSickbeard w/ SABnzbd+!</span>
                             </label>                            
+                        </div>
+
+                        <div class="field-pair">
+                            <label class="nocheck clearfix">
+                                <span class="component-title">Auto Post-Processing Frequency</span>
+                                <input type="text" name="autopostprocesser_frequency" id="autopostprocesser_frequency" value="$sickbeard.AUTOPOSTPROCESSER_FREQUENCY" size="5" />
+                            </label>
+                            <label class="nocheck clearfix">
+                                <span class="component-title">&nbsp;</span>
+                                <span class="component-desc">Time in minutes to check for new files to auto post-process (eg. 10)</span>
+                            </label>
                         </div>
 
                         <div class="field-pair">
@@ -263,7 +280,7 @@
 
                     <div class="component-group-desc">
                         <h3>Episode Naming</h3>
-                        <p>How Sick Beard will name and sort your episodes.</p>
+                        <p>How SickRage will name and sort your episodes.</p>
                     </div>
 
                     <fieldset class="component-group-list">

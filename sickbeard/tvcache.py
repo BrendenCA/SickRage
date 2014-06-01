@@ -1,20 +1,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
@@ -34,7 +34,7 @@ from lib.feedcache import cache
 
 from sickbeard import db
 from sickbeard import logger
-from sickbeard.common import Quality
+from sickbeard.common import Quality, cpu_presets
 
 from sickbeard import helpers, show_name_helpers
 from sickbeard.exceptions import MultipleShowObjectsException
@@ -85,7 +85,9 @@ class TVCache():
 
         myDB = self._getDB()
 
-        myDB.action("DELETE FROM [" + self.providerID + "] WHERE 1")
+        curDate = datetime.date.today() - datetime.timedelta(weeks=1)
+
+        myDB.action("DELETE FROM [" + self.providerID + "] WHERE time < ?", [int(time.mktime(curDate.timetuple()))])
 
     def _getRSSData(self):
 
@@ -100,6 +102,11 @@ class TVCache():
         return True
 
     def updateCache(self):
+
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
+
         if not self.shouldUpdate():
             return
 
@@ -111,10 +118,6 @@ class TVCache():
                 self.setLastUpdate()
             else:
                 return []
-
-            # now that we've loaded the current RSS feed lets delete the old cache
-            logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-            self._clearCache()
 
             if self._checkAuth(data):
                 items = data.entries
@@ -235,16 +238,15 @@ class TVCache():
                     {'time': int(time.mktime(toDate.timetuple()))},
                     {'provider': self.providerID})
 
-
     lastUpdate = property(_getLastUpdate)
     lastSearch = property(_getLastSearch)
 
     def shouldUpdate(self):
         # if we've updated recently then skip the update
-        if datetime.datetime.today() - self.lastUpdate < datetime.timedelta(minutes=self.minTime):
-            logger.log(u"Last update was too soon, using old cache: today()-" + str(self.lastUpdate) + "<" + str(
-                datetime.timedelta(minutes=self.minTime)), logger.DEBUG)
-            return False
+        #if datetime.datetime.today() - self.lastUpdate < datetime.timedelta(minutes=self.minTime):
+        #    logger.log(u"Last update was too soon, using old cache: today()-" + str(self.lastUpdate) + "<" + str(
+        #        datetime.timedelta(minutes=self.minTime)), logger.DEBUG)
+        #    return False
 
         return True
 
@@ -264,7 +266,7 @@ class TVCache():
         # if we don't have complete info then parse the filename to get it
         try:
             myParser = NameParser()
-            parse_result = myParser.parse(name).convert()
+            parse_result = myParser.parse(name)
         except InvalidNameException:
             logger.log(u"Unable to parse the filename " + name + " into a valid episode", logger.DEBUG)
             return None
@@ -303,6 +305,9 @@ class TVCache():
             logger.log(u"No match for show: [" + parse_result.series_name + "], not caching ...", logger.DEBUG)
             sickbeard.name_cache.addNameToCache(parse_result.series_name, 0)
             return None
+
+        # scene -> indexer numbering
+        parse_result = parse_result.convert(showObj)
 
         season = episodes = None
         if parse_result.air_by_date or parse_result.sports:
@@ -343,8 +348,8 @@ class TVCache():
                 [name, season, episodeText, indexerid, url, curTimestamp, quality]]
 
 
-    def searchCache(self, episode, manualSearch=False):
-        neededEps = self.findNeededEpisodes(episode, manualSearch)
+    def searchCache(self, episodes, manualSearch=False):
+        neededEps = self.findNeededEpisodes(episodes, manualSearch)
         return neededEps
 
     def listPropers(self, date=None, delimiter="."):
@@ -358,71 +363,70 @@ class TVCache():
         return filter(lambda x: x['indexerid'] != 0, myDB.select(sql))
 
 
-    def findNeededEpisodes(self, epObj=None, manualSearch=False):
+    def findNeededEpisodes(self, episodes, manualSearch=False):
         neededEps = {}
 
         cacheDB = self._getDB()
 
-        if not epObj:
-            sqlResults = cacheDB.select("SELECT * FROM [" + self.providerID + "]")
-        else:
+        for epObj in episodes:
             sqlResults = cacheDB.select(
                 "SELECT * FROM [" + self.providerID + "] WHERE indexerid = ? AND season = ? AND episodes LIKE ?",
                 [epObj.show.indexerid, epObj.season, "%|" + str(epObj.episode) + "|%"])
 
-        # for each cache entry
-        for curResult in sqlResults:
-            # skip non-tv crap (but allow them for Newzbin cause we assume it's filtered well)
-            if self.providerID != 'newzbin' and not show_name_helpers.filterBadReleases(curResult["name"]):
-                continue
+            # for each cache entry
+            for curResult in sqlResults:
 
-            # get the show object, or if it's not one of our shows then ignore it
-            try:
-                showObj = helpers.findCertainShow(sickbeard.showList, int(curResult["indexerid"]))
-            except MultipleShowObjectsException:
-                showObj = None
+                # skip non-tv crap (but allow them for Newzbin cause we assume it's filtered well)
+                if self.providerID != 'newzbin' and not show_name_helpers.filterBadReleases(curResult["name"]):
+                    continue
 
-            if not showObj:
-                continue
+                # get the show object, or if it's not one of our shows then ignore it
+                try:
+                    showObj = helpers.findCertainShow(sickbeard.showList, int(curResult["indexerid"]))
+                except MultipleShowObjectsException:
+                    showObj = None
 
-            # get season and ep data (ignoring multi-eps for now)
-            curSeason = int(curResult["season"])
-            if curSeason == -1:
-                continue
-            curEp = curResult["episodes"].split("|")[1]
-            if not curEp:
-                continue
-            curEp = int(curEp)
-            curQuality = int(curResult["quality"])
+                if not showObj:
+                    continue
 
-            # if the show says we want that episode then add it to the list
-            if not showObj.wantEpisode(curSeason, curEp, curQuality, manualSearch):
-                logger.log(u"Skipping " + curResult["name"] + " because we don't want an episode that's " +
-                           Quality.qualityStrings[curQuality], logger.DEBUG)
-            else:
+                # get season and ep data (ignoring multi-eps for now)
+                curSeason = int(curResult["season"])
+                if curSeason == -1:
+                    continue
+                curEp = curResult["episodes"].split("|")[1]
+                if not curEp:
+                    continue
+                curEp = int(curEp)
+                curQuality = int(curResult["quality"])
 
-                if not epObj:
-                    epObj = showObj.getEpisode(curSeason, curEp)
-
-                # build a result object
-                title = curResult["name"]
-                url = curResult["url"]
-
-                logger.log(u"Found result " + title + " at " + url)
-
-                result = self.provider.getResult([epObj])
-                result.url = url
-                result.name = title
-                result.quality = curQuality
-                result.content = self.provider.getURL(url) \
-                    if self.provider.providerType == sickbeard.providers.generic.GenericProvider.TORRENT \
-                    and not url.startswith('magnet') else None
-
-                # add it to the list
-                if epObj not in neededEps:
-                    neededEps[epObj] = [result]
+                # if the show says we want that episode then add it to the list
+                if not showObj.wantEpisode(curSeason, curEp, curQuality, manualSearch):
+                    logger.log(u"Skipping " + curResult["name"] + " because we don't want an episode that's " +
+                               Quality.qualityStrings[curQuality], logger.DEBUG)
                 else:
-                    neededEps[epObj].append(result)
+
+                    if not epObj:
+                        epObj = showObj.getEpisode(curSeason, curEp)
+
+                    # build a result object
+                    title = curResult["name"]
+                    url = curResult["url"]
+
+                    logger.log(u"Found result " + title + " at " + url)
+
+                    result = self.provider.getResult([epObj])
+                    result.url = url
+                    result.name = title
+                    result.quality = curQuality
+                    result.content = self.provider.getURL(url) \
+                        if self.provider.providerType == sickbeard.providers.generic.GenericProvider.TORRENT \
+                        and not url.startswith('magnet') else None
+
+                    # add it to the list
+                    if epObj not in neededEps:
+                        neededEps[epObj] = [result]
+                    else:
+                        neededEps[epObj].append(result)
 
         # datetime stamp this search so cache gets cleared
         self.setLastSearch()

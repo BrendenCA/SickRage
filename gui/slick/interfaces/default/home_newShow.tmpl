@@ -30,6 +30,8 @@
     <legend class="legendStep">Find a show on the TVDB or TVRAGE</legend>
 
     <div class="stepDiv">
+        <input type="hidden" id="indexer_timeout" value="$sickbeard.INDEXER_TIMEOUT" />
+
         #if $use_provided_info:
             Show retrieved from existing metadata: <a href="$sickbeard.indexerApi($provided_indexer).config["show_url"]$provided_indexer_id">$provided_indexer_name</a>
             <input type="hidden" name="indexerLang" value="en" />
@@ -51,7 +53,7 @@
             <input class="btn" type="button" id="searchName" value="Search" style="height: 26px;position:relative;top:-1px;" /><br /><br />
     
             <b>*</b> This will only affect the language of the retrieved metadata file contents and episode filenames.<br />
-            This <b>DOES NOT</b> allow Sick Beard to download non-english TV episodes!<br />
+            This <b>DOES NOT</b> allow SickRage to download non-english TV episodes!<br />
             <br />
             <div id="searchResults" style="height: 225px; overflow: auto;"><br/></div>
         #end if

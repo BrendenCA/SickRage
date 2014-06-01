@@ -1,20 +1,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import datetime
 import os.path
@@ -25,6 +25,7 @@ import time
 import sickbeard
 
 from sickbeard import logger, helpers, scene_numbering
+from sickbeard.common import cpu_presets
 from dateutil import parser
 
 nameparser_lock = threading.Lock()
@@ -97,6 +98,7 @@ class NameParser(object):
             return None
 
         for (cur_regex_name, cur_regex) in self.compiled_regexes:
+
             match = cur_regex.match(name)
 
             if not match:
@@ -157,9 +159,8 @@ class NameParser(object):
             if 'extra_info' in named_groups:
                 tmp_extra_info = match.group('extra_info')
 
-                # Show.S04.Special is almost certainly not every episode in the season
-                if tmp_extra_info and cur_regex_name == 'season_only' and re.match(
-                        r'([. _-]|^)(special|extra)\w*([. _-]|$)', tmp_extra_info, re.I):
+                # Show.S04.Special or Show.S05.Part.2.Extras is almost certainly not every episode in the season
+                if tmp_extra_info and cur_regex_name == 'season_only' and re.search(r'([. _-]|^)(special|extra)s?\w*([. _-]|$)', tmp_extra_info, re.I):
                     continue
                 result.extra_info = tmp_extra_info
 
@@ -294,7 +295,6 @@ class ParseResult(object):
                  extra_info=None,
                  release_group=None,
                  air_date=None,
-                 show=None,
     ):
 
         self.original_name = original_name
@@ -316,7 +316,6 @@ class ParseResult(object):
         self.sports_event_date = sports_event_date
 
         self.which_regex = None
-        self.show = show
 
     def __eq__(self, other):
         if not other:
@@ -372,23 +371,16 @@ class ParseResult(object):
 
         return to_return.encode('utf-8')
 
-    def convert(self):
-        if not self.series_name: return self # can't work without a series name
+    def convert(self, show):
+        if not show: return self # need show object
+        if not self.season_number: return self  # can't work without a season
+        if not len(self.episode_numbers): return self  # need at least one episode
         if self.air_by_date or self.sports: return self  # scene numbering does not apply to air-by-date
-        if self.season_number == None: return self  # can't work without a season
-        if len(self.episode_numbers) == 0: return self  # need at least one episode
-
-        showResult = helpers.searchDBForShow(self.series_name)
-        if showResult:
-            self.show = helpers.findCertainShow(sickbeard.showList, int(showResult[0]))
-
-        if not self.show:
-            return self
 
         new_episode_numbers = []
         new_season_numbers = []
         for epNo in self.episode_numbers:
-            (s, e) = scene_numbering.get_indexer_numbering(self.show.indexerid, self.show.indexer, self.season_number,
+            (s, e) = scene_numbering.get_indexer_numbering(show.indexerid, show.indexer, self.season_number,
                                                            epNo)
             new_episode_numbers.append(e)
             new_season_numbers.append(s)
@@ -400,7 +392,7 @@ class ParseResult(object):
         if len(new_season_numbers) > 1:
             raise InvalidNameException("Scene numbering results episodes from "
                                        "seasons %s, (i.e. more than one) and "
-                                       "sickbeard does not support this.  "
+                                       "sickrage does not support this.  "
                                        "Sorry." % (str(new_season_numbers)))
 
         # I guess it's possible that we'd have duplicate episodes too, so lets

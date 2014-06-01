@@ -1,27 +1,25 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import urllib
-import email.utils
+import time
 import datetime
-import re
 import os
-import copy
 
 try:
     import xml.etree.cElementTree as etree
@@ -35,14 +33,14 @@ from sickbeard import classes
 from sickbeard import helpers
 from sickbeard import scene_exceptions
 from sickbeard import encodingKludge as ek
-
+from sickbeard.common import cpu_presets
 from sickbeard import logger
 from sickbeard import tvcache
 from sickbeard.exceptions import ex, AuthException
 
 
 class NewznabProvider(generic.NZBProvider):
-    def __init__(self, name, url, key='', catIDs='5030,5040,5060'):
+    def __init__(self, name, url, key='', catIDs='5030,5040,5060', search_mode='eponly', search_fallback=False):
 
         generic.NZBProvider.__init__(self, name)
 
@@ -51,6 +49,9 @@ class NewznabProvider(generic.NZBProvider):
         self.url = url
 
         self.key = key
+
+        self.search_mode = search_mode
+        self.search_fallback = search_fallback
 
         # a 0 in the key spot indicates that no key is needed
         if self.key == '0':
@@ -69,11 +70,11 @@ class NewznabProvider(generic.NZBProvider):
         self.default = False
 
     def configStr(self):
-        return self.name + '|' + self.url + '|' + self.key + '|' + self.catIDs + '|' + str(int(self.enabled))
+        return self.name + '|' + self.url + '|' + self.key + '|' + self.catIDs + '|' + str(int(self.enabled)) + '|' + self.search_mode + '|' + str(int(self.search_fallback))
 
     def imageName(self):
         if ek.ek(os.path.isfile,
-                 ek.ek(os.path.join, sickbeard.PROG_DIR, 'data', 'images', 'providers', self.getID() + '.png')):
+                 ek.ek(os.path.join, sickbeard.PROG_DIR, 'gui', 'slick', 'images', 'providers', self.getID() + '.png')):
             return self.getID() + '.png'
         return 'newznab.png'
 
@@ -91,15 +92,24 @@ class NewznabProvider(generic.NZBProvider):
             cur_params = {}
 
             # search
-            cur_params['q'] = helpers.sanitizeSceneName(cur_exception)
+            if ep_obj.show.indexer == 2:
+                cur_params['rid'] = ep_obj.show.indexerid
+            else:
+                cur_params['q'] = helpers.sanitizeSceneName(cur_exception)
 
             # season
             if ep_obj.show.air_by_date or ep_obj.show.sports:
-                cur_params['season'] = str(ep_obj.airdate)[:7]
+                date_str = str(ep_obj.airdate).split('-')[0]
+                cur_params['season'] = date_str
+                if 'q' in cur_params:
+                    cur_params['q'] += '.' + date_str.replace('-', '.')
+                else:
+                    cur_params['q'] = date_str.replace('-', '.')
             else:
                 cur_params['season'] = str(ep_obj.scene_season)
 
-            to_return.append(cur_params)
+            if not ('rid' in cur_params and to_return):
+                to_return.append(cur_params)
 
         return to_return
 
@@ -111,13 +121,12 @@ class NewznabProvider(generic.NZBProvider):
             return [params]
 
         # search
-        params['q'] = helpers.sanitizeSceneName(self.show.name)
+        if ep_obj.show.indexer == 2:
+            params['rid'] = ep_obj.show.indexerid
+        else:
+            params['q'] = helpers.sanitizeSceneName(self.show.name)
 
-        if self.show.air_by_date:
-            date_str = str(ep_obj.airdate)
-            params['season'] = date_str.partition('-')[0]
-            params['ep'] = date_str.partition('-')[2].replace('-', '/')
-        elif self.show.sports:
+        if self.show.air_by_date or self.show.sports:
             date_str = str(ep_obj.airdate)
             params['season'] = date_str.partition('-')[0]
             params['ep'] = date_str.partition('-')[2].replace('-', '/')
@@ -203,11 +212,10 @@ class NewznabProvider(generic.NZBProvider):
                 (title, url) = self._get_title_and_url(curItem)
 
                 if title and url:
-                    logger.log(u"RSS Feed provider: [" + self.name + "] Attempting to add item to cache: " + title, logger.DEBUG)
                     results.append(curItem)
                 else:
                     logger.log(
-                        u"The data returned from the " + self.name + " RSS feed is incomplete, this result is unusable",
+                        u"The data returned from the " + self.name + " is incomplete, this result is unusable",
                         logger.DEBUG)
 
             return results
@@ -222,8 +230,31 @@ class NewznabProvider(generic.NZBProvider):
         results = [classes.Proper(x['name'], x['url'], datetime.datetime.fromtimestamp(x['time'])) for x in
                    cache_results]
 
-        for term in search_terms:
-            for item in self._doSearch({'q': term}, age=4):
+        index = 0
+        alt_search = ('nzbs_org' == self.getID())
+        term_items_found = False
+        do_search_alt = False
+
+        while index < len(search_terms):
+            search_params = {'q': search_terms[index]}
+            if alt_search:
+
+                if do_search_alt:
+                    index += 1
+
+                if term_items_found:
+                    do_search_alt = True
+                    term_items_found = False
+                else:
+                    if do_search_alt:
+                        search_params["t"] = "search"
+
+                    do_search_alt = (True, False)[do_search_alt]
+
+            else:
+                index += 1
+
+            for item in self._doSearch(search_params, age=4):
 
                 (title, url) = self._get_title_and_url(item)
 
@@ -238,6 +269,8 @@ class NewznabProvider(generic.NZBProvider):
                 if not search_date or result_date > search_date:
                     search_result = classes.Proper(title, url, result_date)
                     results.append(search_result)
+                    term_items_found = True
+                    do_search_alt = False
 
         return results
 
@@ -267,8 +300,12 @@ class NewznabCache(tvcache.TVCache):
     def _checkAuth(self, data):
         return self.provider._checkAuthFromData(data)
 
-
     def updateCache(self):
+
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
+
         if not self.shouldUpdate():
             return
 
@@ -280,10 +317,6 @@ class NewznabCache(tvcache.TVCache):
                 self.setLastUpdate()
             else:
                 return []
-
-            # now that we've loaded the current RSS feed lets delete the old cache
-            logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-            self._clearCache()
 
             if self._checkAuth(data):
                 items = data.entries

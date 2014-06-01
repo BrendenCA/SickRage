@@ -1,26 +1,25 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
 import traceback
 import threading
-import Queue
 
 import sickbeard
 
@@ -32,20 +31,13 @@ from sickbeard import generic_queue
 from sickbeard import name_cache
 from sickbeard.exceptions import ex
 
-show_queue_lock = threading.Lock()
-
 class ShowQueue(generic_queue.GenericQueue):
     def __init__(self):
-
         generic_queue.GenericQueue.__init__(self)
         self.queue_name = "SHOWQUEUE"
 
     def _isInQueue(self, show, actions):
-        shows = [x.show for x in self.queue.queue if x.action_id in actions] if not self.queue.empty() else []
-        if self.currentItem != None and self.currentItem.action_id in actions:
-            shows.append(self.currentItem)
-
-        return show in shows
+        return show in [x.show for x in self.queue if x.action_id in actions]
 
     def _isBeingSomethinged(self, show, actions):
         return self.currentItem != None and show == self.currentItem.show and \
@@ -79,11 +71,7 @@ class ShowQueue(generic_queue.GenericQueue):
         return self._isBeingSomethinged(show, (ShowQueueActions.SUBTITLE,))
 
     def _getLoadingShowList(self):
-        shows = [x for x in self.queue.queue if x != None and x.isLoading] if not self.queue.empty() else []
-        if self.currentItem != None and self.currentItem.isLoading:
-            shows.append(self.currentItem)
-        return shows
-
+        return [x for x in self.queue + [self.currentItem] if x != None and x.isLoading]
 
     loadingShowList = property(_getLoadingShowList)
 
@@ -187,9 +175,7 @@ class ShowQueueItem(generic_queue.QueueItem):
         self.show = show
 
     def isInQueue(self):
-        queue = [x for x in sickbeard.showQueueScheduler.action.queue.queue]
-        queue.append(sickbeard.showQueueScheduler.action.currentItem)
-        return self in queue
+        return self in sickbeard.showQueueScheduler.action.queue + [sickbeard.showQueueScheduler.action.currentItem] #@UndefinedVariable
 
     def _getName(self):
         return str(self.show.indexerid)
@@ -302,7 +288,9 @@ class QueueItemAdd(ShowQueueItem):
             # be smartish about this
             if self.show.genre and "talk show" in self.show.genre.lower():
                 self.show.air_by_date = 1
-            elif self.show.classification and "sports" in self.show.classification.lower():
+            if self.show.genre and "documentary" in self.show.genre.lower():
+                self.show.air_by_date = 0
+            if self.show.classification and "sports" in self.show.classification.lower():
                 self.show.sports = 1
 
 
@@ -410,7 +398,7 @@ class QueueItemRefresh(ShowQueueItem):
 
         self.show.refreshDir()
         self.show.writeMetadata()
-        self.show.updateMetadata()
+        #self.show.updateMetadata()
         self.show.populateCache()
 
         self.inProgress = False

@@ -79,17 +79,6 @@
 
                         <div class="field-pair">
                             <label class="nocheck clearfix">
-                                <span class="component-title">RSS Cache Update Frequency</span>
-                                <input type="text" name="rssupdate_frequency" value="$sickbeard.RSSUPDATE_FREQUENCY" size="5" />
-                            </label>
-                            <label class="nocheck clearfix">
-                                <span class="component-title">&nbsp;</span>
-                                <span class="component-desc">Time in minutes between searches (eg. 60)</span>
-                            </label>
-                        </div>
-
-                        <div class="field-pair">
-                            <label class="nocheck clearfix">
                                 <span class="component-title">Daily Search Frequency</span>
                                 <input type="text" name="dailysearch_frequency" value="$sickbeard.DAILYSEARCH_FREQUENCY" size="5" />
                             </label>
@@ -133,17 +122,10 @@
                             </label>
                         </div>
                         <div class="field-pair">
-                            <input type="checkbox" name="prefer_episode_releases" id="prefer_episode_releases" #if $sickbeard.PREFER_EPISODE_RELEASES == True then "checked=\"checked\"" else ""# />
-                            <label class="clearfix" for="prefer_episode_releases">
-                                <span class="component title">Prefer episode download</span>
-                                <span class="component-desc">Prefer to download seperate episodes, not complete seasons?</span>
-                            </label>
-                        </div>
-                        <div class="field-pair">
-                            <input type="checkbox" name="rssupdate_startup" id="rssupdate_startup" #if $sickbeard.RSSUPDATE_STARTUP == True then "checked=\"checked\"" else ""# />
-                            <label class="clearfix" for="rssupdate_startup">
-                                <span class="component title">RSS Cache Updates on startup</span>
-                                <span class="component-desc">Start RSS Cache updates upon startup of SickRage?</span>
+                            <input type="checkbox" name="dailysearch_startup" id="dailysearch_startup" #if $sickbeard.DAILYSEARCH_STARTUP == True then "checked=\"checked\"" else ""# />
+                            <label class="clearfix" for="dailysearch_startup">
+                                <span class="component title">Daily Search on startup</span>
+                                <span class="component-desc">Start daily search upon startup of SickRage?</span>
                             </label>
                         </div>
                         <div class="field-pair">
@@ -164,7 +146,7 @@
 
                     <div class="component-group-desc">
                         <h3>NZB Search</h3>
-                        <p>Settings that dictate how Sick Beard handles NZB search results.</p>
+                        <p>Settings that dictate how SickRage handles NZB search results.</p>
                     </div>
 
                     <fieldset class="component-group-list">
@@ -173,7 +155,7 @@
                             <input type="checkbox" name="use_nzbs" class="enabler" id="use_nzbs" #if $sickbeard.USE_NZBS then "checked=\"checked\"" else ""# />
                             <label class="clearfix" for="use_nzbs">
                                 <span class="component-title">Search NZBs</span>
-                                <span class="component-desc">Should Sick Beard search for NZB files?</span>
+                                <span class="component-desc">Should SickRage search for NZB files?</span>
                             </label>
                         </div>
 
@@ -205,7 +187,7 @@
                                 </label>
                                 <label class="nocheck clearfix">
                                     <span class="component-title">&nbsp;</span>
-                                    <span class="component-desc">The directory where Sick Beard should store your <i>NZB</i> files.</span>
+                                    <span class="component-desc">The directory where SickRage should store your <i>NZB</i> files.</span>
                                 </label>
                             </div>
                         </div>
@@ -348,7 +330,7 @@
 
                     <div class="component-group-desc">
                         <h3>Torrent Search</h3>
-                        <p>Settings that dictate how Sick Beard handles Torrent search results.</p>
+                        <p>Settings that dictate how SickRage handles Torrent search results.</p>
                     </div>
 
                     <fieldset class="component-group-list">
@@ -357,7 +339,7 @@
                             <input type="checkbox" name="use_torrents" class="enabler" id="use_torrents" #if $sickbeard.USE_TORRENTS == True then "checked=\"checked\"" else ""# />
                             <label class="clearfix" for="use_torrents">
                                 <span class="component-title">Search Torrents</span>
-                                <span class="component-desc">Should Sick Beard search for torrent files?</span>
+                                <span class="component-desc">Should SickRage search for torrent files?</span>
                             </label>
                         </div>
 
@@ -387,7 +369,7 @@
                             	</label>
 	                            <label class="nocheck clearfix">
     	                            <span class="component-title">&nbsp;</span>
-        	                        <span class="component-desc">The directory where Sick Beard should store your <i>Torrent</i> files.</span>
+        	                        <span class="component-desc">The directory where SickRage should store your <i>Torrent</i> files.</span>
             	                </label>
                         	</div>
 
@@ -468,17 +450,6 @@
                                 </label>
                             </div>
 
-                            <div class="field-pair" id="Torrent_Ratio">
-                                <label class="nocheck clearfix">
-                                    <span class="component-title" id="torrent_ratio_desc">Torrent Ratio</span>
-                                    <input type="number" step="0.1" name="torrent_ratio" id="torrent_ratio" value="$sickbeard.TORRENT_RATIO" size="2" />
-                                </label>
-                                <label class="nocheck clearfix">
-                                    <span class="component-title">&nbsp;</span>
-                                    <span class="component-desc">Stop transfer when reaching ratio (blank for default)</span>
-                                </label>
-                            </div>
-
                             <div class="field-pair" id="Torrent_Seed_Time">
                                 <label class="nocheck clearfix">
                                     <span class="component-title" id="torrent_seed_time_desc">Seed Time</span>
@@ -521,7 +492,7 @@
                 </div><!-- /component-group3 //-->
 
                 <!--<div class="title-group clearfix" id="no-torrents">
-                    <div class="ui-corner-all config_message">Note: Sick Beard works better with Usenet than with Torrents, <a href="http://www.sickbeard.com/usenet.html" target="_blank">here's why</a>.</div>
+                    <div class="ui-corner-all config_message">Note: SickRage works better with Usenet than with Torrents, <a href="http://www.sickbeard.com/usenet.html" target="_blank">here's why</a>.</div>
                 </div> //-->
                 
 		<br/>

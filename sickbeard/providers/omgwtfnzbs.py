@@ -1,20 +1,20 @@
 # Author: Jordon Smith <smith@jordon.me.uk>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard. If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
 import urllib
 import generic
@@ -42,16 +42,19 @@ except ImportError:
 class OmgwtfnzbsProvider(generic.NZBProvider):
     def __init__(self):
         generic.NZBProvider.__init__(self, "omgwtfnzbs")
+        self.enabled = False
+        self.username = None
+        self.api_key = None
         self.cache = OmgwtfnzbsCache(self)
         self.url = 'https://omgwtfnzbs.org/'
         self.supportsBacklog = True
 
     def isEnabled(self):
-        return sickbeard.OMGWTFNZBS
+        return self.enabled
 
     def _checkAuth(self):
 
-        if not sickbeard.OMGWTFNZBS_USERNAME or not sickbeard.OMGWTFNZBS_APIKEY:
+        if not self.username or not self.api_key:
             raise AuthException("Your authentication credentials for " + self.name + " are missing, check your config.")
 
         return True
@@ -98,8 +101,8 @@ class OmgwtfnzbsProvider(generic.NZBProvider):
 
         self._checkAuth()
 
-        params = {'user': sickbeard.OMGWTFNZBS_USERNAME,
-                  'api': sickbeard.OMGWTFNZBS_APIKEY,
+        params = {'user': self.username,
+                  'api': self.api_key,
                   'eng': 1,
                   'catid': '19,20',  # SD,HD
                   'retention': sickbeard.USENET_RETENTION,
@@ -155,8 +158,8 @@ class OmgwtfnzbsCache(tvcache.TVCache):
         self.minTime = 20
 
     def _getRSSData(self):
-        params = {'user': sickbeard.OMGWTFNZBS_USERNAME,
-                  'api': sickbeard.OMGWTFNZBS_APIKEY,
+        params = {'user': provider.username,
+                  'api': provider.api_key,
                   'eng': 1,
                   'catid': '19,20'}  # SD,HD
 

@@ -1,21 +1,22 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
+import sickbeard
 from lib.dateutil import tz
 import lib.dateutil.zoneinfo
 from sickbeard import db
@@ -225,7 +226,7 @@ def get_network_timezone(network, network_dict):
 
 
 # parse date and time string into local time
-def parse_date_time(d, t, network, local=False):
+def parse_date_time(d, t, network):
     if network_dict is None:
         load_network_dict()
     mo = time_regex.search(t)
@@ -257,16 +258,17 @@ def parse_date_time(d, t, network, local=False):
     if hr < 0 or hr > 23 or m < 0 or m > 59:
         hr = 0
         m = 0
-    te = datetime.datetime.fromordinal(helpers.tryInt(d))
-    foreign_timezone = get_network_timezone(network, network_dict)
-    foreign_naive = datetime.datetime(te.year, te.month, te.day, hr, m, tzinfo=foreign_timezone)
-    try:
-        if local:
-            return foreign_naive.replace(tzinfo=sb_timezone).astimezone(sb_timezone)
-        return foreign_naive.astimezone(sb_timezone)
-    except (ValueError):
-        return foreign_naive
 
+    te = datetime.datetime.fromordinal(helpers.tryInt(d))
+    try:
+        if sickbeard.TIMEZONE_DISPLAY == 'local':
+            foreign_timezone = get_network_timezone(network, network_dict)
+            foreign_naive = datetime.datetime(te.year, te.month, te.day, hr, m, tzinfo=foreign_timezone)
+            return foreign_naive.astimezone(sb_timezone)
+        else:
+            return datetime.datetime(te.year, te.month, te.day, hr, m, tzinfo=sb_timezone)
+    except:
+        return datetime.datetime(te.year, te.month, te.day, hr, m)
 
 def test_timeformat(t):
     mo = time_regex.search(t)

@@ -1,28 +1,29 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import cherrypy
 import os.path
 import datetime
 import re
-import time
+import urlparse
 import sickbeard
 
+from sickbeard import encodingKludge as ek
 from sickbeard import helpers
 from sickbeard import logger
 from sickbeard import naming
@@ -157,27 +158,27 @@ def change_TV_DOWNLOAD_DIR(tv_download_dir):
     return True
 
 
-def change_DAILYSEARCH_FREQUENCY(freq):
-    sickbeard.DAILYSEARCH_FREQUENCY = to_int(freq, default=sickbeard.DEFAULT_SEARCH_FREQUENCY)
+def change_AUTOPOSTPROCESSER_FREQUENCY(freq):
+    sickbeard.AUTOPOSTPROCESSER_FREQUENCY = to_int(freq, default=sickbeard.DEFAULT_AUTOPOSTPROCESSER_FREQUENCY)
 
-    if sickbeard.DAILYSEARCH_FREQUENCY < sickbeard.MIN_SEARCH_FREQUENCY:
-        sickbeard.DAILYSEARCH_FREQUENCY = sickbeard.MIN_SEARCH_FREQUENCY
+    if sickbeard.AUTOPOSTPROCESSER_FREQUENCY < sickbeard.MIN_AUTOPOSTPROCESSER_FREQUENCY:
+        sickbeard.AUTOPOSTPROCESSER_FREQUENCY = sickbeard.MIN_AUTOPOSTPROCESSER_FREQUENCY
+
+    sickbeard.autoPostProcesserScheduler.cycleTime = datetime.timedelta(minutes=sickbeard.AUTOPOSTPROCESSER_FREQUENCY)
+
+def change_DAILYSEARCH_FREQUENCY(freq):
+    sickbeard.DAILYSEARCH_FREQUENCY = to_int(freq, default=sickbeard.DEFAULT_DAILYSEARCH_FREQUENCY)
+
+    if sickbeard.DAILYSEARCH_FREQUENCY < sickbeard.MIN_DAILYSEARCH_FREQUENCY:
+        sickbeard.DAILYSEARCH_FREQUENCY = sickbeard.MIN_DAILYSEARCH_FREQUENCY
 
     sickbeard.dailySearchScheduler.cycleTime = datetime.timedelta(minutes=sickbeard.DAILYSEARCH_FREQUENCY)
 
-def change_RSSUPDATE_FREQUENCY(freq):
-    sickbeard.RSSUPDATE_FREQUENCY = to_int(freq, default=sickbeard.DEFAULT_SEARCH_FREQUENCY)
-
-    if sickbeard.RSSUPDATE_FREQUENCY < sickbeard.MIN_SEARCH_FREQUENCY:
-        sickbeard.RSSUPDATE_FREQUENCY = sickbeard.MIN_SEARCH_FREQUENCY
-
-    sickbeard.updateRSSScheduler.cycleTime = datetime.timedelta(minutes=sickbeard.RSSUPDATE_FREQUENCY)
-
 def change_BACKLOG_FREQUENCY(freq):
-    sickbeard.BACKLOG_FREQUENCY = to_int(freq, default=sickbeard.DEFAULT_SEARCH_FREQUENCY)
+    sickbeard.BACKLOG_FREQUENCY = to_int(freq, default=sickbeard.DEFAULT_BACKLOG_FREQUENCY)
 
-    if sickbeard.BACKLOG_FREQUENCY < sickbeard.MIN_SEARCH_FREQUENCY:
-        sickbeard.BACKLOG_FREQUENCY = sickbeard.MIN_SEARCH_FREQUENCY
+    if sickbeard.BACKLOG_FREQUENCY < sickbeard.MIN_BACKLOG_FREQUENCY:
+        sickbeard.BACKLOG_FREQUENCY = sickbeard.MIN_BACKLOG_FREQUENCY
 
     sickbeard.backlogSearchScheduler.cycleTime = datetime.timedelta(minutes=sickbeard.BACKLOG_FREQUENCY)
 
@@ -185,7 +186,7 @@ def change_UPDATE_FREQUENCY(freq):
     sickbeard.UPDATE_FREQUENCY = to_int(freq, default=sickbeard.DEFAULT_UPDATE_FREQUENCY)
 
     if sickbeard.UPDATE_FREQUENCY < sickbeard.MIN_UPDATE_FREQUENCY:
-        sickbeard.UPDATE_FREQUENCY = sickbeard.MIN_SEARCH_FREQUENCY
+        sickbeard.UPDATE_FREQUENCY = sickbeard.MIN_UPDATE_FREQUENCY
 
     sickbeard.versionCheckScheduler.cycleTime = datetime.timedelta(hours=sickbeard.UPDATE_FREQUENCY)
 
@@ -274,22 +275,30 @@ def clean_hosts(hosts, default_port=None):
 
 def clean_url(url):
     """
-    Returns an url starting with http:// or https:// and ending with /
+    Returns an cleaned url starting with a scheme and folder with trailing /
     or an empty string
     """
 
-    if url:
+    if url and url.strip():
 
-        if not re.match(r'(https?|scgi)://.*', url):
-            url = 'http://' + url
+        url = url.strip()
 
-        if not url.endswith('/'):
-            url = url + '/'
+        if '://' not in url:
+            url = '//' + url
+
+        scheme, netloc, path, query, fragment = urlparse.urlsplit(url, 'http')
+
+        if not path.endswith('/'):
+            basename, ext = ek.ek(os.path.splitext, ek.ek(os.path.basename, path))  # @UnusedVariable
+            if not ext:
+                path = path + '/'
+
+        cleaned_url = urlparse.urlunsplit((scheme, netloc, path, query, fragment))
 
     else:
-        url = ''
+        cleaned_url = ''
 
-    return url
+    return cleaned_url
 
 
 def to_int(val, default=0):
@@ -360,6 +369,7 @@ def check_setting_float(config, cfg_name, item_name, def_val):
 def check_setting_str(config, cfg_name, item_name, def_val, log=True):
     # For passwords you must include the word `password` in the item_name and add `helpers.encrypt(ITEM_NAME, ENCRYPTION_VERSION)` in save_config()
     if bool(item_name.find('password') + 1):
+        log = False
         encryption_version = sickbeard.ENCRYPTION_VERSION
     else:
         encryption_version = 0
@@ -375,11 +385,11 @@ def check_setting_str(config, cfg_name, item_name, def_val, log=True):
             config[cfg_name][item_name] = helpers.encrypt(my_val, encryption_version)
 
     if log:
-        logger.log(item_name + " -> " + my_val, logger.DEBUG)
+        logger.log(item_name + " -> " + str(my_val), logger.DEBUG)
     else:
         logger.log(item_name + " -> ******", logger.DEBUG)
-    return my_val
 
+    return my_val
 
 class ConfigMigrator():
     def __init__(self, config_obj):
@@ -407,9 +417,9 @@ class ConfigMigrator():
 
         if self.config_version > self.expected_config_version:
             logger.log_error_and_exit(u"Your config version (" + str(
-                self.config_version) + ") has been incremented past what this version of Sick Beard supports (" + str(
+                self.config_version) + ") has been incremented past what this version of SickRage supports (" + str(
                 self.expected_config_version) + ").\n" + \
-                                      "If you have used other forks or a newer version of Sick Beard, your config file may be unusable due to their modifications.")
+                                      "If you have used other forks or a newer version of SickRage, your config file may be unusable due to their modifications.")
 
         sickbeard.CONFIG_VERSION = self.config_version
 
@@ -576,7 +586,7 @@ class ConfigMigrator():
                                logger.ERROR)
                     continue
 
-                if name == 'Sick Beard Index':
+                if name == 'SickRage Index':
                     key = '0'
 
                 if name == 'NZBs.org':

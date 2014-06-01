@@ -2,20 +2,20 @@
 # Modified by jkaberg, https://github.com/jkaberg for SceneAccess
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import time
 import re
@@ -24,7 +24,7 @@ import datetime
 import urlparse
 import sickbeard
 import generic
-from sickbeard.common import Quality
+from sickbeard.common import Quality, cpu_presets
 from sickbeard import logger
 from sickbeard import tvcache
 from sickbeard import db
@@ -56,6 +56,15 @@ class HDTorrentsProvider(generic.TorrentProvider):
 
         self.supportsBacklog = True
 
+        self.enabled = False
+        self.uid = None
+        self.hash = None
+        self.username = None
+        self.password = None
+        self.ratio = None
+        self.minseed = None
+        self.minleech = None
+
         self.cache = HDTorrentsCache(self)
 
         self.url = self.urls['base_url']
@@ -65,7 +74,7 @@ class HDTorrentsProvider(generic.TorrentProvider):
         self.cookies = None
 
     def isEnabled(self):
-        return sickbeard.HDTORRENTS
+        return self.enabled
 
     def imageName(self):
         return 'hdtorrents.png'
@@ -80,14 +89,14 @@ class HDTorrentsProvider(generic.TorrentProvider):
         if any(requests.utils.dict_from_cookiejar(self.session.cookies).values()):
             return True
 
-        if sickbeard.HDTORRENTS_UID and sickbeard.HDTORRENTS_HASH:
+        if self.uid and self.hash:
 
             requests.utils.add_dict_to_cookiejar(self.session.cookies, self.cookies)
 
         else:
 
-            login_params = {'uid': sickbeard.HDTORRENTS_USERNAME,
-                            'pwd': sickbeard.HDTORRENTS_PASSWORD,
+            login_params = {'uid': self.username,
+                            'pwd': self.password,
                             'submit': 'Confirm',
             }
 
@@ -102,11 +111,11 @@ class HDTorrentsProvider(generic.TorrentProvider):
                 logger.log(u'Invalid username or password for ' + self.name + ' Check your settings', logger.ERROR)
                 return False
 
-            sickbeard.HDTORRENTS_UID = requests.utils.dict_from_cookiejar(self.session.cookies)['uid']
-            sickbeard.HDTORRENTS_HASH = requests.utils.dict_from_cookiejar(self.session.cookies)['pass']
+            self.uid = requests.utils.dict_from_cookiejar(self.session.cookies)['uid']
+            self.hash = requests.utils.dict_from_cookiejar(self.session.cookies)['pass']
 
-            self.cookies = {'uid': sickbeard.HDTORRENTS_UID,
-                            'pass': sickbeard.HDTORRENTS_HASH
+            self.cookies = {'uid': self.uid,
+                            'pass': self.hash
             }
 
         return True
@@ -116,7 +125,7 @@ class HDTorrentsProvider(generic.TorrentProvider):
         search_string = {'Season': []}
         for show_name in set(show_name_helpers.allPossibleShowNames(self.show)):
             if ep_obj.show.air_by_date or ep_obj.show.sports:
-                ep_string = show_name + str(ep_obj.airdate)[:7]
+                ep_string = show_name + str(ep_obj.airdate).split('-')[0]
             else:
                 ep_string = show_name + ' S%02d' % int(ep_obj.scene_season)  #1) showName SXX
 
@@ -202,7 +211,7 @@ class HDTorrentsProvider(generic.TorrentProvider):
                     except (AttributeError, TypeError):
                         continue
 
-                    if mode != 'RSS' and seeders == 0:
+                    if mode != 'RSS' and (seeders == 0 or seeders < self.minseed or leechers < self.minleech):
                         continue
 
                     if not title or not download_url:
@@ -241,7 +250,7 @@ class HDTorrentsProvider(generic.TorrentProvider):
                         except (AttributeError, TypeError):
                             continue
 
-                        if mode != 'RSS' and seeders == 0:
+                        if mode != 'RSS' and (seeders == 0 or seeders < self.minseed or leechers < self.minleech):
                             continue
 
                         if not title or not download_url:
@@ -310,6 +319,7 @@ class HDTorrentsProvider(generic.TorrentProvider):
 
         for sqlshow in sqlResults:
             self.show = curshow = helpers.findCertainShow(sickbeard.showList, int(sqlshow["showid"]))
+            if not self.show: continue
             curEp = curshow.getEpisode(int(sqlshow["season"]), int(sqlshow["episode"]))
 
             searchString = self._get_episode_search_strings(curEp, add_string='PROPER|REPACK')
@@ -321,7 +331,7 @@ class HDTorrentsProvider(generic.TorrentProvider):
         return results
 
     def seedRatio(self):
-        return sickbeard.HDTORRENTS_RATIO
+        return self.ratio
 
 
 class HDTorrentsCache(tvcache.TVCache):
@@ -334,6 +344,10 @@ class HDTorrentsCache(tvcache.TVCache):
 
     def updateCache(self):
 
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
+
         if not self.shouldUpdate():
             return
 
@@ -344,9 +358,6 @@ class HDTorrentsCache(tvcache.TVCache):
             self.setLastUpdate()
         else:
             return []
-
-        logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-        self._clearCache()
 
         cl = []
         for result in rss_results:

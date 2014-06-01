@@ -1,20 +1,20 @@
 # Author: Mr_Orange
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import urllib
 import re
@@ -39,12 +39,14 @@ class NyaaProvider(generic.TorrentProvider):
 
         self.supportsAbsoluteNumbering = True
 
+        self.enabled = False
+
         self.cache = NyaaCache(self)
 
         self.url = 'http://www.nyaa.eu/'
 
     def isEnabled(self):
-        return sickbeard.NYAA
+        return self.enabled
 
     def imageName(self):
         return 'nyaatorrents.png'
@@ -54,9 +56,8 @@ class NyaaProvider(generic.TorrentProvider):
         quality = Quality.sceneQuality(title)
         return quality
 
-    def getSearchResults(self, show, season, episodes, seasonSearch=False, manualSearch=False):
-        results = generic.TorrentProvider.findSearchResults(self, show, season, episodes, seasonSearch, manualSearch)
-        return results
+    def findSearchResults(self, show, season, episodes, search_mode, manualSearch=False):
+        return generic.TorrentProvider.findSearchResults(self, show, season, episodes, search_mode, manualSearch)
 
     def _get_season_search_strings(self, ep_obj):
         names = []

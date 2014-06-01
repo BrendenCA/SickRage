@@ -1,20 +1,20 @@
 # Author: Mr_Orange
 # URL: https://github.com/mr-orange/Sick-Beard
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import re
 import datetime
@@ -23,7 +23,7 @@ import time
 import sickbeard
 import generic
 
-from sickbeard.common import Quality
+from sickbeard.common import Quality, cpu_presets
 from sickbeard import logger
 from sickbeard import tvcache
 from sickbeard import db
@@ -52,6 +52,14 @@ class SpeedCDProvider(generic.TorrentProvider):
 
         self.supportsBacklog = True
 
+        self.enabled = False
+        self.username = None
+        self.password = None
+        self.ratio = None
+        self.freeleech = False
+        self.minseed = None
+        self.minleech = None
+
         self.cache = SpeedCDCache(self)
 
         self.url = self.urls['base_url']
@@ -59,7 +67,7 @@ class SpeedCDProvider(generic.TorrentProvider):
         self.categories = {'Season': {'c14':1}, 'Episode': {'c2':1, 'c49':1}, 'RSS': {'c14':1, 'c2':1, 'c49':1}}
 
     def isEnabled(self):
-        return sickbeard.SPEEDCD
+        return self.enabled
 
     def imageName(self):
         return 'speedcd.png'
@@ -71,11 +79,9 @@ class SpeedCDProvider(generic.TorrentProvider):
 
     def _doLogin(self):
 
-        login_params = {'username': sickbeard.SPEEDCD_USERNAME,
-                        'password': sickbeard.SPEEDCD_PASSWORD
+        login_params = {'username': self.username,
+                        'password': self.password
                         }
-
-        self.session = requests.Session()
 
         try:
             response = self.session.post(self.urls['login'], data=login_params, timeout=30, verify=False)
@@ -96,7 +102,7 @@ class SpeedCDProvider(generic.TorrentProvider):
         search_string = {'Season': []}
         for show_name in set(show_name_helpers.allPossibleShowNames(self.show)):
             if ep_obj.show.air_by_date or ep_obj.show.sports:
-                ep_string = show_name + str(ep_obj.airdate)[:7]
+                ep_string = show_name + str(ep_obj.airdate).split('-')[0]
             else:
                 ep_string = show_name +' S%02d' % int(ep_obj.scene_season) #1) showName SXX
 
@@ -157,7 +163,7 @@ class SpeedCDProvider(generic.TorrentProvider):
 
                 for torrent in torrents:
 
-                    if sickbeard.SPEEDCD_FREELEECH and not torrent['free']:
+                    if self.freeleech and not torrent['free']:
                         continue
 
                     title = re.sub('<[^>]*>', '', torrent['name'])
@@ -165,7 +171,7 @@ class SpeedCDProvider(generic.TorrentProvider):
                     seeders = int(torrent['seed'])
                     leechers = int(torrent['leech'])
 
-                    if mode != 'RSS' and seeders == 0:
+                    if mode != 'RSS' and (seeders == 0 or seeders < self.minseed or leechers < self.minleech):
                         continue
 
                     if not title or not url:
@@ -234,6 +240,7 @@ class SpeedCDProvider(generic.TorrentProvider):
 
         for sqlshow in sqlResults:
             self.show = curshow = helpers.findCertainShow(sickbeard.showList, int(sqlshow["showid"]))
+            if not self.show: continue
             curEp = curshow.getEpisode(int(sqlshow["season"]), int(sqlshow["episode"]))
 
             searchString = self._get_episode_search_strings(curEp, add_string='PROPER|REPACK')
@@ -245,8 +252,7 @@ class SpeedCDProvider(generic.TorrentProvider):
         return results
 
     def seedRatio(self):
-        return sickbeard.SPEEDCD_RATIO
-
+        return self.ratio
 
 class SpeedCDCache(tvcache.TVCache):
 
@@ -259,6 +265,10 @@ class SpeedCDCache(tvcache.TVCache):
 
     def updateCache(self):
 
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
+
         if not self.shouldUpdate():
             return
 
@@ -269,9 +279,6 @@ class SpeedCDCache(tvcache.TVCache):
             self.setLastUpdate()
         else:
             return []
-
-        logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-        self._clearCache()
 
         ql = []
         for result in rss_results:

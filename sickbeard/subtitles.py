@@ -1,21 +1,22 @@
 # Author: Nyaran <nyayukko@gmail.com>, based on Antoine Bertin <diaoulael@gmail.com> work
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
+import time
 import datetime
 import sickbeard
 from sickbeard.common import *
@@ -85,7 +86,7 @@ class SubtitlesFinder():
     The SubtitlesFinder will be executed every hour but will not necessarly search
     and download subtitles. Only if the defined rule is true
     """
-    def run(self):
+    def run(self, force=False):
         # TODO: Put that in the __init__ before starting the thread?
         if not sickbeard.USE_SUBTITLES:
             logger.log(u'Subtitles support disabled', logger.DEBUG)
@@ -114,6 +115,7 @@ class SubtitlesFinder():
         rules = self._getRules()
         now = datetime.datetime.now()
         for epToSub in sqlResults:
+
             if not ek.ek(os.path.isfile, epToSub['location']):
                 logger.log('Episode file does not exist, cannot download subtitles for episode %dx%d of show %s' % (epToSub['season'], epToSub['episode'], epToSub['show_name']), logger.DEBUG)
                 continue

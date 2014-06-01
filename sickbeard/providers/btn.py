@@ -2,20 +2,20 @@
 # Author: Daniel Heimans
 # URL: http://code.google.com/p/sickbeard
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import time
 import socket
@@ -28,7 +28,7 @@ from sickbeard import scene_exceptions
 from sickbeard import logger
 from sickbeard import tvcache
 from sickbeard.helpers import sanitizeSceneName
-from sickbeard.common import Quality
+from sickbeard.common import cpu_presets
 from sickbeard.exceptions import ex, AuthException
 
 from lib import jsonrpclib
@@ -39,18 +39,23 @@ class BTNProvider(generic.TorrentProvider):
         generic.TorrentProvider.__init__(self, "BTN")
 
         self.supportsBacklog = True
+
+        self.enabled = False
+        self.api_key = None
+        self.ratio = None
+
         self.cache = BTNCache(self)
 
         self.url = "http://broadcasthe.net"
 
     def isEnabled(self):
-        return sickbeard.BTN
+        return self.enabled
 
     def imageName(self):
         return 'btn.png'
 
     def _checkAuth(self):
-        if not sickbeard.BTN_API_KEY:
+        if not self.api_key:
             raise AuthException("Your authentication credentials for " + self.name + " are missing, check your config.")
 
         return True
@@ -73,7 +78,7 @@ class BTNProvider(generic.TorrentProvider):
         self._checkAuth()
 
         params = {}
-        apikey = sickbeard.BTN_API_KEY
+        apikey = self.api_key
 
         # age in seconds
         if age:
@@ -157,7 +162,7 @@ class BTNProvider(generic.TorrentProvider):
     def _get_title_and_url(self, parsedJSON):
 
         # The BTN API gives a lot of information in response,
-        # however Sick Beard is built mostly around Scene or
+        # however SickRage is built mostly around Scene or
         # release names, which is why we are using them here.
 
         if 'ReleaseName' in parsedJSON and parsedJSON['ReleaseName']:
@@ -212,7 +217,7 @@ class BTNProvider(generic.TorrentProvider):
             whole_season_params['category'] = 'Season'
             if ep_obj.show.air_by_date or ep_obj.show.sports:
                 # Search for the year of the air by date show
-                whole_season_params['name'] = str(ep_obj.airdate)[:7]
+                whole_season_params['name'] = str(ep_obj.airdate).split('-')[0]
             else:
                 whole_season_params['name'] = 'Season ' + str(ep_obj.scene_season)
 
@@ -296,8 +301,7 @@ class BTNProvider(generic.TorrentProvider):
         return results
 
     def seedRatio(self):
-        return sickbeard.BTN_RATIO
-
+        return self.ratio
 
 class BTNCache(tvcache.TVCache):
     def __init__(self, provider):
@@ -307,6 +311,10 @@ class BTNCache(tvcache.TVCache):
         self.minTime = 15
 
     def updateCache(self):
+
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
 
         if not self.shouldUpdate():
             return
@@ -320,9 +328,6 @@ class BTNCache(tvcache.TVCache):
                 self.setLastUpdate()
             else:
                 return []
-
-            logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-            self._clearCache()
 
             if self._checkAuth(data):
                 # By now we know we've got data and no auth errors, all we need to do is put it in the database

@@ -1,20 +1,20 @@
 # Authors: Mr_Orange <mr_orange@hotmail.it>, EchelonFour
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import re
 
@@ -67,35 +67,27 @@ class uTorrentAPI(GenericClient):
 
     def _set_torrent_ratio(self, result):
 
-        ratio = ''
+        ratio = None
         if result.ratio:
             ratio = result.ratio
-        elif sickbeard.TORRENT_RATIO:
-            ratio = sickbeard.TORRENT_RATIO
-        else:
-            return True
 
-        try:
-            float(ratio)
-        except ValueError:
-            logger.log(self.name + u': Invalid Ratio. "' + ratio + u'" is not a number', logger.ERROR)
-            return False
-
-        ratio = 10 * float(ratio)
-        params = {'action': 'setprops',
-                  'hash': result.hash,
-                  's': 'seed_override',
-                  'v': '1'
-        }
-        if self._request(params=params):
+        if ratio:
             params = {'action': 'setprops',
                       'hash': result.hash,
-                      's': 'seed_ratio',
-                      'v': ratio
+                      's': 'seed_override',
+                      'v': '1'
             }
-            return self._request(params=params)
-        else:
-            return False     
+            if self._request(params=params):
+                params = {'action': 'setprops',
+                          'hash': result.hash,
+                          's': 'seed_ratio',
+                          'v': float(ratio) * 10
+                }
+                return self._request(params=params)
+            else:
+                return False
+
+        return True
 
     def _set_torrent_seed_time(self, result):
 

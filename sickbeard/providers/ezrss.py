@@ -1,20 +1,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import urllib
 import re
@@ -40,12 +40,15 @@ class EZRSSProvider(generic.TorrentProvider):
 
         self.supportsBacklog = True
 
+        self.enabled = False
+        self.ratio = None
+
         self.cache = EZRSSCache(self)
 
         self.url = 'https://www.ezrss.it/'
 
     def isEnabled(self):
-        return sickbeard.EZRSS
+        return self.enabled
 
     def imageName(self):
         return 'ezrss.png'
@@ -57,7 +60,7 @@ class EZRSSProvider(generic.TorrentProvider):
 
         return quality
 
-    def getSearchResults(self, show, season, episodes, seasonSearch=False, manualSearch=False):
+    def findSearchResults(self, show, season, episodes, search_mode, manualSearch=False):
 
         self.show = show
 
@@ -68,7 +71,7 @@ class EZRSSProvider(generic.TorrentProvider):
                        logger.WARNING)
             return results
 
-        results = generic.TorrentProvider.findSearchResults(self, show, season, episodes, seasonSearch, manualSearch)
+        results = generic.TorrentProvider.findSearchResults(self, show, season, episodes, search_mode, manualSearch)
 
         return results
 
@@ -79,7 +82,7 @@ class EZRSSProvider(generic.TorrentProvider):
         params['show_name'] = helpers.sanitizeSceneName(self.show.name, ezrss=True).replace('.', ' ').encode('utf-8')
 
         if ep_obj.show.air_by_date or ep_obj.show.sports:
-            params['season'] = str(ep_obj.airdate)[:7]
+            params['season'] = str(ep_obj.airdate).split('-')[0]
         else:
             params['season'] = ep_obj.scene_season
 
@@ -158,7 +161,7 @@ class EZRSSProvider(generic.TorrentProvider):
         return None
 
     def seedRatio(self):
-        return sickbeard.EZRSS_RATIO
+        return self.ratio
 
 
 class EZRSSCache(tvcache.TVCache):

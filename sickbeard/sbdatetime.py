@@ -1,20 +1,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import datetime
 import locale
@@ -94,21 +94,21 @@ class static_or_instance(object):
 # subclass datetime.datetime to add function to display custom date and time formats
 class sbdatetime(datetime.datetime):
     has_locale = True
+    ORIG_LC_TIME = locale.LC_TIME
 
     # display Time in Sickbeard Format
     @static_or_instance
     def sbftime(self, dt=None, show_seconds=False, t_preset=None):
 
-        try:
-            locale.setlocale(locale.LC_TIME, '')
-        except:
-            pass
+        try:locale.setlocale(locale.LC_TIME, self.ORIG_LC_TIME)
+        except:pass
 
         try:
             if sbdatetime.has_locale:
                 locale.setlocale(locale.LC_TIME, 'us_US')
         except:
             sbdatetime.has_locale = False
+
         strt = ''
         try:
             if self is None:
@@ -129,9 +129,10 @@ class sbdatetime(datetime.datetime):
         finally:
             try:
                 if sbdatetime.has_locale:
-                    locale.setlocale(locale.LC_TIME, '')
+                    locale.setlocale(locale.LC_TIME, self.ORIG_LC_TIME)
             except:
                 sbdatetime.has_locale = False
+
             return strt
 
     # display Date in Sickbeard Format
@@ -139,7 +140,7 @@ class sbdatetime(datetime.datetime):
     def sbfdate(self, dt=None, d_preset=None):
 
         try:
-            locale.setlocale(locale.LC_TIME, '')
+            locale.setlocale(locale.LC_TIME, self.ORIG_LC_TIME)
         except:
             pass
 
@@ -157,6 +158,12 @@ class sbdatetime(datetime.datetime):
                 else:
                     strd = self.strftime(sickbeard.DATE_PRESET)
         finally:
+
+            try:
+                locale.setlocale(locale.LC_TIME, self.ORIG_LC_TIME)
+            except:
+                pass
+
             return strd
 
     # display Datetime in Sickbeard Format
@@ -164,7 +171,7 @@ class sbdatetime(datetime.datetime):
     def sbfdatetime(self, dt=None, show_seconds=False, d_preset=None, t_preset=None):
 
         try:
-            locale.setlocale(locale.LC_TIME, '')
+            locale.setlocale(locale.LC_TIME, self.ORIG_LC_TIME)
         except:
             pass
 
@@ -206,7 +213,8 @@ class sbdatetime(datetime.datetime):
         finally:
             try:
                 if sbdatetime.has_locale:
-                    locale.setlocale(locale.LC_TIME, '')
+                    locale.setlocale(locale.LC_TIME, self.ORIG_LC_TIME)
             except:
                 sbdatetime.has_locale = False
+
             return strd

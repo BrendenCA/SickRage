@@ -1,20 +1,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
@@ -24,28 +24,28 @@ import sqlite3
 import datetime
 import socket
 import os, sys, subprocess, re
-import urllib
 
+from urllib2 import getproxies
 from threading import Lock
 
 # apparently py2exe won't build these unless they're imported somewhere
 from sickbeard import providers, metadata, config
+from sickbeard.providers.generic import GenericProvider
 from providers import ezrss, tvtorrents, btn, newznab, womble, thepiratebay, torrentleech, kat, publichd, iptorrents, \
     omgwtfnzbs, scc, hdtorrents, torrentday, hdbits, nextgen, speedcd
-from sickbeard.config import CheckSection, check_setting_int, check_setting_str, check_setting_float, ConfigMigrator, naming_ep_type
+from sickbeard.config import CheckSection, check_setting_int, check_setting_str, check_setting_float, ConfigMigrator, \
+    naming_ep_type
 from sickbeard import searchBacklog, showUpdater, versionChecker, properFinder, autoPostProcesser, \
     subtitles, traktWatchListChecker
 from sickbeard import helpers, db, exceptions, show_queue, search_queue, scheduler, show_name_helpers
 from sickbeard import logger
 from sickbeard import naming
-from sickbeard import rssupdater
 from sickbeard import dailysearcher
 from sickbeard import scene_numbering, scene_exceptions, name_cache
 from indexers.indexer_api import indexerApi
 from indexers.indexer_exceptions import indexer_shownotfound, indexer_exception, indexer_error, indexer_episodenotfound, \
     indexer_attributenotfound, indexer_seasonnotfound, indexer_userabort, indexerExcepts
-
-from common import SD, SKIPPED, NAMING_REPEAT
+from sickbeard.common import SD, SKIPPED, NAMING_REPEAT
 
 from sickbeard.databases import mainDB, cache_db, failed_db
 
@@ -87,7 +87,6 @@ properFinderScheduler = None
 autoPostProcesserScheduler = None
 subtitlesFinderScheduler = None
 traktWatchListCheckerSchedular = None
-updateRSSScheduler = None
 
 showList = None
 loadingShowList = None
@@ -120,9 +119,13 @@ WEB_PASSWORD = None
 WEB_HOST = None
 WEB_IPV6 = None
 
+HANDLE_REVERSE_PROXY = None
 PROXY_SETTING = None
 
 LOCALHOST_IP = None
+
+CPU_PRESET = None
+
 ANON_REDIRECT = None
 
 USE_API = False
@@ -155,6 +158,7 @@ STATUS_DEFAULT = None
 FLATTEN_FOLDERS_DEFAULT = None
 SUBTITLES_DEFAULT = None
 INDEXER_DEFAULT = None
+INDEXER_TIMEOUT = None
 PROVIDER_ORDER = []
 
 NAMING_MULTI_EP = None
@@ -176,97 +180,23 @@ TORRENT_METHOD = None
 TORRENT_DIR = None
 DOWNLOAD_PROPERS = None
 CHECK_PROPERS_INTERVAL = None
-PREFER_EPISODE_RELEASES = None
 ALLOW_HIGH_PRIORITY = None
 
+AUTOPOSTPROCESSER_FREQUENCY = None
 DAILYSEARCH_FREQUENCY = None
-RSSUPDATE_FREQUENCY = None
 UPDATE_FREQUENCY = None
-BACKLOG_FREQUENCY = 21
-RSSUPDATE_STARTUP = None
+BACKLOG_FREQUENCY = None
+DAILYSEARCH_STARTUP = None
 BACKLOG_STARTUP = None
 
-MIN_SEARCH_FREQUENCY = 10
+MIN_AUTOPOSTPROCESSER_FREQUENCY = 1
+MIN_BACKLOG_FREQUENCY = 10
+MIN_DAILYSEARCH_FREQUENCY = 10
 MIN_UPDATE_FREQUENCY = 1
-DEFAULT_SEARCH_FREQUENCY = 40
-DEFAULT_UPDATE_FREQUENCY = 12
-
-EZRSS = False
-EZRSS_RATIO = None
-
-TVTORRENTS = False
-TVTORRENTS_DIGEST = None
-TVTORRENTS_HASH = None
-TVTORRENTS_RATIO = None
-
-BTN = False
-BTN_API_KEY = None
-BTN_RATIO = None
-
-NEWZNAB_DATA = None
-
-THEPIRATEBAY = False
-THEPIRATEBAY_RATIO = None
-THEPIRATEBAY_TRUSTED = False
-THEPIRATEBAY_PROXY = False
-THEPIRATEBAY_PROXY_URL = None
-THEPIRATEBAY_BLACKLIST = None
-
-TORRENTLEECH = False
-TORRENTLEECH_KEY = None
-TORRENTLEECH_USERNAME = None
-TORRENTLEECH_PASSWORD = None
-TORRENTLEECH_RATIO = None
-
-IPTORRENTS = False
-IPTORRENTS_USERNAME = None
-IPTORRENTS_PASSWORD = None
-IPTORRENTS_RATIO = None
-IPTORRENTS_FREELEECH = False
-
-NEXTGEN = False
-NEXTGEN_USERNAME = None
-NEXTGEN_PASSWORD = None
-NEXTGEN_RATIO = None
-NEXTGEN_FREELEECH = False
-
-KAT = None
-KAT_RATIO = None
-KAT_VERIFIED = False
-
-PUBLICHD = None
-PUBLICHD_RATIO = None
-
-SCC = False
-SCC_USERNAME = None
-SCC_PASSWORD = None
-SCC_RATIO = None
-
-HDTORRENTS = False
-HDTORRENTS_USERNAME = None
-HDTORRENTS_PASSWORD = None
-HDTORRENTS_RATIO = None
-HDTORRENTS_UID = None
-HDTORRENTS_HASH = None
-
-TORRENTDAY = None
-TORRENTDAY_USERNAME = None
-TORRENTDAY_PASSWORD = None
-TORRENTDAY_RATIO = None
-TORRENTDAY_UID = None
-TORRENTDAY_HASH = None
-TORRENTDAY_FREELEECH = None
-
-HDBITS = False
-HDBITS_USERNAME = None
-HDBITS_PASSKEY = None
-HDBITS_RATIO = None
-
-SPEEDCD = False
-SPEEDCD_USERNAME = None
-SPEEDCD_PASSWORD = None
-SPEEDCD_RATIO = None
-SPEEDCD_FREELEECH = None
+DEFAULT_AUTOPOSTPROCESSER_FREQUENCY = 10
+DEFAULT_BACKLOG_FREQUENCY = 10080
+DEFAULT_DAILYSEARCH_FREQUENCY = 60
+DEFAULT_UPDATE_FREQUENCY = 1
 
 ADD_SHOWS_WO_DIR = None
 CREATE_MISSING_SHOW_DIRS = None
@@ -278,6 +208,7 @@ PROCESS_METHOD = None
 MOVE_ASSOCIATED_FILES = False
 TV_DOWNLOAD_DIR = None
 UNPACK = False
+SKIP_REMOVED_FILES = False
 
 NZBS = False
 NZBS_UID = None
@@ -309,7 +240,6 @@ TORRENT_USERNAME = None
 TORRENT_PASSWORD = None
 TORRENT_HOST = ''
 TORRENT_PATH = ''
-TORRENT_RATIO = None
 TORRENT_SEED_TIME = None
 TORRENT_PAUSED = False
 TORRENT_HIGH_BANDWIDTH = False
@@ -463,6 +393,7 @@ COMING_EPS_MISSED_RANGE = None
 DATE_PRESET = None
 TIME_PRESET = None
 TIME_PRESET_W_SECONDS = None
+TIMEZONE_DISPLAY = None
 
 USE_SUBTITLES = False
 SUBTITLES_LANGUAGES = []
@@ -492,32 +423,27 @@ def initialize(consoleLogging=True):
     with INIT_LOCK:
 
         global ACTUAL_LOG_DIR, LOG_DIR, WEB_PORT, WEB_LOG, ENCRYPTION_VERSION, WEB_ROOT, WEB_USERNAME, WEB_PASSWORD, WEB_HOST, WEB_IPV6, USE_API, API_KEY, ENABLE_HTTPS, HTTPS_CERT, HTTPS_KEY, \
-            HANDLE_REVERSE_PROXY, USE_NZBS, USE_TORRENTS, NZB_METHOD, NZB_DIR, DOWNLOAD_PROPERS, CHECK_PROPERS_INTERVAL, PREFER_EPISODE_RELEASES, ALLOW_HIGH_PRIORITY, TORRENT_METHOD, \
+            HANDLE_REVERSE_PROXY, USE_NZBS, USE_TORRENTS, NZB_METHOD, NZB_DIR, DOWNLOAD_PROPERS, CHECK_PROPERS_INTERVAL, ALLOW_HIGH_PRIORITY, TORRENT_METHOD, \
             SAB_USERNAME, SAB_PASSWORD, SAB_APIKEY, SAB_CATEGORY, SAB_HOST, \
             NZBGET_USERNAME, NZBGET_PASSWORD, NZBGET_CATEGORY, NZBGET_HOST, NZBGET_USE_HTTPS, backlogSearchScheduler, \
-            TORRENT_USERNAME, TORRENT_PASSWORD, TORRENT_HOST, TORRENT_PATH, TORRENT_RATIO, TORRENT_SEED_TIME, TORRENT_PAUSED, TORRENT_HIGH_BANDWIDTH, TORRENT_LABEL, TORRENT_VERIFY_CERT, \
+            TORRENT_USERNAME, TORRENT_PASSWORD, TORRENT_HOST, TORRENT_PATH, TORRENT_SEED_TIME, TORRENT_PAUSED, TORRENT_HIGH_BANDWIDTH, TORRENT_LABEL, TORRENT_VERIFY_CERT, \
             USE_XBMC, XBMC_ALWAYS_ON, XBMC_NOTIFY_ONSNATCH, XBMC_NOTIFY_ONDOWNLOAD, XBMC_NOTIFY_ONSUBTITLEDOWNLOAD, XBMC_UPDATE_FULL, XBMC_UPDATE_ONLYFIRST, \
-            XBMC_UPDATE_LIBRARY, XBMC_HOST, XBMC_USERNAME, XBMC_PASSWORD, \
+            XBMC_UPDATE_LIBRARY, XBMC_HOST, XBMC_USERNAME, XBMC_PASSWORD, BACKLOG_FREQUENCY, \
             USE_TRAKT, TRAKT_USERNAME, TRAKT_PASSWORD, TRAKT_API, TRAKT_REMOVE_WATCHLIST, TRAKT_USE_WATCHLIST, TRAKT_METHOD_ADD, TRAKT_START_PAUSED, traktWatchListCheckerSchedular, \
             USE_PLEX, PLEX_NOTIFY_ONSNATCH, PLEX_NOTIFY_ONDOWNLOAD, PLEX_NOTIFY_ONSUBTITLEDOWNLOAD, PLEX_UPDATE_LIBRARY, \
-            PLEX_SERVER_HOST, PLEX_HOST, PLEX_USERNAME, PLEX_PASSWORD, \
+            PLEX_SERVER_HOST, PLEX_HOST, PLEX_USERNAME, PLEX_PASSWORD, DEFAULT_BACKLOG_FREQUENCY, MIN_BACKLOG_FREQUENCY, BACKLOG_STARTUP, SKIP_REMOVED_FILES, \
             showUpdateScheduler, __INITIALIZED__, LAUNCH_BROWSER, UPDATE_SHOWS_ON_START, SORT_ARTICLE, showList, loadingShowList, \
-            NEWZNAB_DATA, NZBS, NZBS_UID, NZBS_HASH, EZRSS, TVTORRENTS, TVTORRENTS_DIGEST, TVTORRENTS_HASH, TVTORRENTS_OPTIONS, BTN, BTN_API_KEY, BTN_OPTIONS, \
-            THEPIRATEBAY, THEPIRATEBAY_TRUSTED, THEPIRATEBAY_PROXY, THEPIRATEBAY_PROXY_URL, THEPIRATEBAY_BLACKLIST, THEPIRATEBAY_OPTIONS, TORRENTLEECH, TORRENTLEECH_USERNAME, TORRENTLEECH_PASSWORD, TORRENTLEECH_OPTIONS, \
-            IPTORRENTS, IPTORRENTS_USERNAME, IPTORRENTS_PASSWORD, IPTORRENTS_FREELEECH, IPTORRENTS_OPTIONS, KAT, KAT_VERIFIED, KAT_OPTIONS, PUBLICHD, PUBLICHD_OPTIONS, SCC, SCC_USERNAME, SCC_PASSWORD, SCC_OPTIONS, HDTORRENTS, HDTORRENTS_USERNAME, HDTORRENTS_PASSWORD, HDTORRENTS_UID, HDTORRENTS_HASH, HDTORRENTS_OPTIONS, TORRENTDAY, TORRENTDAY_USERNAME, TORRENTDAY_PASSWORD, TORRENTDAY_UID, TORRENTDAY_HASH, TORRENTDAY_FREELEECH, TORRENTDAY_OPTIONS, \
-            HDBITS, HDBITS_USERNAME, HDBITS_PASSKEY, HDBITS_OPTIONS, TORRENT_DIR, USENET_RETENTION, SOCKET_TIMEOUT, RSSUPDATE_FREQUENCY, DEFAULT_SEARCH_FREQUENCY, BACKLOG_FREQUENCY, BACKLOG_STARTUP, INDEXER_DEFAULT, RSSUPDATE_STARTUP, \
-            NEXTGEN, NEXTGEN_USERNAME, NEXTGEN_PASSWORD, NEXTGEN_FREELEECH, NEXTGEN_OPTIONS, SPEEDCD, SPEEDCD_USERNAME, SPEEDCD_PASSWORD, SPEEDCD_FREELEECH, \
-            EZRSS_RATIO, TVTORRENTS_RATIO, BTN_RATIO, THEPIRATEBAY_RATIO, TORRENTLEECH_RATIO, IPTORRENTS_RATIO, KAT_RATIO, PUBLICHD_RATIO, TORRENTDAY_RATIO, SCC_RATIO, HDTORRENTS_RATIO, HDBITS_RATIO, NEXTGEN_RATIO, SPEEDCD_RATIO, \
-            QUALITY_DEFAULT, FLATTEN_FOLDERS_DEFAULT, SUBTITLES_DEFAULT, STATUS_DEFAULT, \
+            NEWZNAB_DATA, NZBS, NZBS_UID, NZBS_HASH, INDEXER_DEFAULT, INDEXER_TIMEOUT, USENET_RETENTION, TORRENT_DIR, \
+            QUALITY_DEFAULT, FLATTEN_FOLDERS_DEFAULT, SUBTITLES_DEFAULT, STATUS_DEFAULT, DAILYSEARCH_STARTUP, \
             GROWL_NOTIFY_ONSNATCH, GROWL_NOTIFY_ONDOWNLOAD, GROWL_NOTIFY_ONSUBTITLEDOWNLOAD, TWITTER_NOTIFY_ONSNATCH, TWITTER_NOTIFY_ONDOWNLOAD, TWITTER_NOTIFY_ONSUBTITLEDOWNLOAD, \
             USE_GROWL, GROWL_HOST, GROWL_PASSWORD, USE_PROWL, PROWL_NOTIFY_ONSNATCH, PROWL_NOTIFY_ONDOWNLOAD, PROWL_NOTIFY_ONSUBTITLEDOWNLOAD, PROWL_API, PROWL_PRIORITY, PROG_DIR, \
             USE_PYTIVO, PYTIVO_NOTIFY_ONSNATCH, PYTIVO_NOTIFY_ONDOWNLOAD, PYTIVO_NOTIFY_ONSUBTITLEDOWNLOAD, PYTIVO_UPDATE_LIBRARY, PYTIVO_HOST, PYTIVO_SHARE_NAME, PYTIVO_TIVO_NAME, \
             USE_NMA, NMA_NOTIFY_ONSNATCH, NMA_NOTIFY_ONDOWNLOAD, NMA_NOTIFY_ONSUBTITLEDOWNLOAD, NMA_API, NMA_PRIORITY, \
             USE_PUSHALOT, PUSHALOT_NOTIFY_ONSNATCH, PUSHALOT_NOTIFY_ONDOWNLOAD, PUSHALOT_NOTIFY_ONSUBTITLEDOWNLOAD, PUSHALOT_AUTHORIZATIONTOKEN, \
             USE_PUSHBULLET, PUSHBULLET_NOTIFY_ONSNATCH, PUSHBULLET_NOTIFY_ONDOWNLOAD, PUSHBULLET_NOTIFY_ONSUBTITLEDOWNLOAD, PUSHBULLET_API, PUSHBULLET_DEVICE, \
-            versionCheckScheduler, VERSION_NOTIFY, AUTO_UPDATE, PROCESS_AUTOMATICALLY, UNPACK, \
-            KEEP_PROCESSED_DIR, PROCESS_METHOD, TV_DOWNLOAD_DIR, MIN_SEARCH_FREQUENCY, DEFAULT_UPDATE_FREQUENCY, MIN_UPDATE_FREQUENCY, UPDATE_FREQUENCY, \
-            showQueueScheduler, searchQueueScheduler, ROOT_DIRS, CACHE_DIR, ACTUAL_CACHE_DIR, \
+            versionCheckScheduler, VERSION_NOTIFY, AUTO_UPDATE, PROCESS_AUTOMATICALLY, UNPACK, CPU_PRESET, \
+            KEEP_PROCESSED_DIR, PROCESS_METHOD, TV_DOWNLOAD_DIR, MIN_DAILYSEARCH_FREQUENCY, DEFAULT_UPDATE_FREQUENCY, MIN_UPDATE_FREQUENCY, UPDATE_FREQUENCY, \
+            showQueueScheduler, searchQueueScheduler, ROOT_DIRS, CACHE_DIR, ACTUAL_CACHE_DIR, TIMEZONE_DISPLAY, \
             NAMING_PATTERN, NAMING_MULTI_EP, NAMING_FORCE_FOLDERS, NAMING_ABD_PATTERN, NAMING_CUSTOM_ABD, NAMING_SPORTS_PATTERN, NAMING_CUSTOM_SPORTS, NAMING_STRIP_YEAR, \
             RENAME_EPISODES, AIRDATE_EPISODES, properFinderScheduler, PROVIDER_ORDER, autoPostProcesserScheduler, \
             WOMBLE, OMGWTFNZBS, OMGWTFNZBS_USERNAME, OMGWTFNZBS_APIKEY, providerList, newznabProviderList, torrentRssProviderList, \
@@ -533,7 +459,8 @@ def initialize(consoleLogging=True):
             GUI_NAME, HOME_LAYOUT, HISTORY_LAYOUT, DISPLAY_SHOW_SPECIALS, COMING_EPS_LAYOUT, COMING_EPS_SORT, COMING_EPS_DISPLAY_PAUSED, COMING_EPS_MISSED_RANGE, DATE_PRESET, TIME_PRESET, TIME_PRESET_W_SECONDS, \
             METADATA_WDTV, METADATA_TIVO, METADATA_MEDE8ER, IGNORE_WORDS, CALENDAR_UNPROTECTED, CREATE_MISSING_SHOW_DIRS, \
             ADD_SHOWS_WO_DIR, USE_SUBTITLES, SUBTITLES_LANGUAGES, SUBTITLES_DIR, SUBTITLES_SERVICES_LIST, SUBTITLES_SERVICES_ENABLED, SUBTITLES_HISTORY, SUBTITLES_FINDER_FREQUENCY, subtitlesFinderScheduler, \
-            USE_FAILED_DOWNLOADS, DELETE_FAILED, ANON_REDIRECT, LOCALHOST_IP, TMDB_API_KEY, DEBUG, PROXY_SETTING, updateRSSScheduler
+            USE_FAILED_DOWNLOADS, DELETE_FAILED, ANON_REDIRECT, LOCALHOST_IP, TMDB_API_KEY, DEBUG, PROXY_SETTING, \
+            AUTOPOSTPROCESSER_FREQUENCY, DEFAULT_AUTOPOSTPROCESSER_FREQUENCY, MIN_AUTOPOSTPROCESSER_FREQUENCY
 
         if __INITIALIZED__:
             return False
@@ -588,6 +515,9 @@ def initialize(consoleLogging=True):
         LAUNCH_BROWSER = bool(check_setting_int(CFG, 'General', 'launch_browser', 1))
 
         LOCALHOST_IP = check_setting_str(CFG, 'General', 'localhost_ip', '')
+
+        CPU_PRESET = check_setting_str(CFG, 'General', 'cpu_preset', 'NORMAL')
+
         ANON_REDIRECT = check_setting_str(CFG, 'General', 'anon_redirect', 'http://dereferer.org/?')
         PROXY_SETTING = check_setting_str(CFG, 'General', 'proxy_setting', '')
         # attempt to help prevent users from breaking links by using a bad url 
@@ -628,7 +558,7 @@ def initialize(consoleLogging=True):
         if not re.match(r'\d+\|[^|]+(?:\|[^|]+)*', ROOT_DIRS):
             ROOT_DIRS = ''
 
-        proxies = urllib.getproxies()
+        proxies = getproxies()
         proxy_url = None
         if 'http' in proxies:
             proxy_url = proxies['http']
@@ -641,6 +571,7 @@ def initialize(consoleLogging=True):
         AUTO_UPDATE = check_setting_int(CFG, 'General', 'auto_update', 0)
         FLATTEN_FOLDERS_DEFAULT = bool(check_setting_int(CFG, 'General', 'flatten_folders_default', 0))
         INDEXER_DEFAULT = check_setting_int(CFG, 'General', 'indexer_default', 0)
+        INDEXER_TIMEOUT = check_setting_int(CFG, 'General', 'indexer_timeout', 10)
 
         PROVIDER_ORDER = check_setting_str(CFG, 'General', 'provider_order', '').split()
 
@@ -670,26 +601,27 @@ def initialize(consoleLogging=True):
         if CHECK_PROPERS_INTERVAL not in ('15m', '45m', '90m', '4h', 'daily'):
             CHECK_PROPERS_INTERVAL = 'daily'
 
-        PREFER_EPISODE_RELEASES = bool(check_setting_int(CFG, 'General', 'prefer_episode_releases', 0))
-
         ALLOW_HIGH_PRIORITY = bool(check_setting_int(CFG, 'General', 'allow_high_priority', 1))
 
-        RSSUPDATE_STARTUP = bool(check_setting_int(CFG, 'General', 'rssupdate_startup', 1))
+        DAILYSEARCH_STARTUP = bool(check_setting_int(CFG, 'General', 'dailysearch_startup', 1))
         BACKLOG_STARTUP = bool(check_setting_int(CFG, 'General', 'backlog_startup', 1))
+        SKIP_REMOVED_FILES = bool(check_setting_int(CFG, 'General', 'skip_removed_files', 0))
 
         USENET_RETENTION = check_setting_int(CFG, 'General', 'usenet_retention', 500)
 
-        DAILYSEARCH_FREQUENCY = check_setting_int(CFG, 'General', 'dailysearch_frequency', DEFAULT_SEARCH_FREQUENCY)
-        if DAILYSEARCH_FREQUENCY < MIN_SEARCH_FREQUENCY:
-            DAILYSEARCH_FREQUENCY = MIN_SEARCH_FREQUENCY
+        AUTOPOSTPROCESSER_FREQUENCY = check_setting_int(CFG, 'General', 'dailysearch_frequency',
+                                                        DEFAULT_AUTOPOSTPROCESSER_FREQUENCY)
+        if AUTOPOSTPROCESSER_FREQUENCY < MIN_AUTOPOSTPROCESSER_FREQUENCY:
+            AUTOPOSTPROCESSER_FREQUENCY = MIN_AUTOPOSTPROCESSER_FREQUENCY
 
-        RSSUPDATE_FREQUENCY = check_setting_int(CFG, 'General', 'rssupdate_frequency', DEFAULT_SEARCH_FREQUENCY)
-        if RSSUPDATE_FREQUENCY < MIN_SEARCH_FREQUENCY:
-            RSSUPDATE_FREQUENCY = MIN_SEARCH_FREQUENCY
+        DAILYSEARCH_FREQUENCY = check_setting_int(CFG, 'General', 'dailysearch_frequency',
+                                                  DEFAULT_DAILYSEARCH_FREQUENCY)
+        if DAILYSEARCH_FREQUENCY < MIN_DAILYSEARCH_FREQUENCY:
+            DAILYSEARCH_FREQUENCY = MIN_DAILYSEARCH_FREQUENCY
 
-        BACKLOG_FREQUENCY = check_setting_int(CFG, 'General', 'backlog_frequency', DEFAULT_SEARCH_FREQUENCY)
-        if BACKLOG_FREQUENCY < MIN_SEARCH_FREQUENCY:
-            BACKLOG_FREQUENCY = MIN_SEARCH_FREQUENCY
+        BACKLOG_FREQUENCY = check_setting_int(CFG, 'General', 'backlog_frequency', DEFAULT_BACKLOG_FREQUENCY)
+        if BACKLOG_FREQUENCY < MIN_BACKLOG_FREQUENCY:
+            BACKLOG_FREQUENCY = MIN_BACKLOG_FREQUENCY
 
         UPDATE_FREQUENCY = check_setting_int(CFG, 'General', 'update_frequency', DEFAULT_UPDATE_FREQUENCY)
         if UPDATE_FREQUENCY < MIN_UPDATE_FREQUENCY:
@@ -709,89 +641,6 @@ def initialize(consoleLogging=True):
         CREATE_MISSING_SHOW_DIRS = check_setting_int(CFG, 'General', 'create_missing_show_dirs', 0)
         ADD_SHOWS_WO_DIR = check_setting_int(CFG, 'General', 'add_shows_wo_dir', 0)
 
-        EZRSS = bool(check_setting_int(CFG, 'General', 'use_torrent', 0))
-        if not EZRSS:
-            EZRSS = bool(check_setting_int(CFG, 'EZRSS', 'ezrss', 0))
-        EZRSS_RATIO = check_setting_float(CFG, 'EZRSS', 'ezrss_ratio', 0)
-
-        TVTORRENTS = bool(check_setting_int(CFG, 'TVTORRENTS', 'tvtorrents', 0))
-        TVTORRENTS_DIGEST = check_setting_str(CFG, 'TVTORRENTS', 'tvtorrents_digest', '')
-        TVTORRENTS_HASH = check_setting_str(CFG, 'TVTORRENTS', 'tvtorrents_hash', '')
-        TVTORRENTS_RATIO = check_setting_float(CFG, 'TVTORRENTS', 'tvtorrents_ratio', 0)
-        TVTORRENTS_OPTIONS = check_setting_str(CFG, 'TVTORRENTS', 'tvtorrents_options', '')
-
-        BTN = bool(check_setting_int(CFG, 'BTN', 'btn', 0))
-        BTN_API_KEY = check_setting_str(CFG, 'BTN', 'btn_api_key', '')
-        BTN_RATIO = check_setting_float(CFG, 'BTN', 'btn_ratio', 0)
-        BTN_OPTIONS = check_setting_str(CFG, 'BTN', 'btn_options', '')
-
-        THEPIRATEBAY = bool(check_setting_int(CFG, 'THEPIRATEBAY', 'thepiratebay', 1))
-        THEPIRATEBAY_RATIO = check_setting_float(CFG, 'THEPIRATEBAY', 'thepiratebay_ratio', 0)
-        THEPIRATEBAY_TRUSTED = bool(check_setting_int(CFG, 'THEPIRATEBAY', 'thepiratebay_trusted', 1))
-        THEPIRATEBAY_PROXY = bool(check_setting_int(CFG, 'THEPIRATEBAY', 'thepiratebay_proxy', 0))
-        THEPIRATEBAY_PROXY_URL = check_setting_str(CFG, 'THEPIRATEBAY', 'thepiratebay_proxy_url', '')
-        THEPIRATEBAY_BLACKLIST = check_setting_str(CFG, 'THEPIRATEBAY', 'thepiratebay_blacklist', '')
-        THEPIRATEBAY_OPTIONS = check_setting_str(CFG, 'THEPIRATEBAY', 'thepiratebay_options', '')
-
-        TORRENTLEECH = bool(check_setting_int(CFG, 'TORRENTLEECH', 'torrentleech', 0))
-        TORRENTLEECH_USERNAME = check_setting_str(CFG, 'TORRENTLEECH', 'torrentleech_username', '')
-        TORRENTLEECH_PASSWORD = check_setting_str(CFG, 'TORRENTLEECH', 'torrentleech_password', '')
-        TORRENTLEECH_RATIO = check_setting_float(CFG, 'TORRENTLEECH', 'torrentleech_ratio', 0)
-        TORRENTLEECH_OPTIONS = check_setting_str(CFG, 'TORRENTLEECH', 'torrentleech_options', '')
-
-        IPTORRENTS = bool(check_setting_int(CFG, 'IPTORRENTS', 'iptorrents', 0))
-        IPTORRENTS_USERNAME = check_setting_str(CFG, 'IPTORRENTS', 'iptorrents_username', '')
-        IPTORRENTS_PASSWORD = check_setting_str(CFG, 'IPTORRENTS', 'iptorrents_password', '')
-        IPTORRENTS_RATIO = check_setting_float(CFG, 'IPTORRENTS', 'iptorrents_ratio', 0)
-        IPTORRENTS_FREELEECH = bool(check_setting_int(CFG, 'IPTORRENTS', 'iptorrents_freeleech', 0))
-        IPTORRENTS_OPTIONS = check_setting_str(CFG, 'IPTORRENTS', 'iptorrents_options', '')
-
-        NEXTGEN = bool(check_setting_int(CFG, 'NEXTGEN', 'nextgen', 0))
-        NEXTGEN_USERNAME = check_setting_str(CFG, 'NEXTGEN', 'nextgen_username', '')
-        NEXTGEN_PASSWORD = check_setting_str(CFG, 'NEXTGEN', 'nextgen_password', '')
-        NEXTGEN_RATIO = check_setting_float(CFG, 'NEXTGEN', 'nextgen_ratio', 0)
-        NEXTGEN_OPTIONS = check_setting_str(CFG, 'NEXTGEN', 'nextgen_options', '')
-
-        KAT = bool(check_setting_int(CFG, 'KAT', 'kat', 0))
-        KAT_RATIO = check_setting_float(CFG, 'KAT', 'kat_ratio', 0)
-        KAT_VERIFIED = bool(check_setting_int(CFG, 'KAT', 'kat_verified', 1))
-        KAT_OPTIONS = check_setting_str(CFG, 'KAT', 'kat_options', '')
-
-        PUBLICHD = bool(check_setting_int(CFG, 'PUBLICHD', 'publichd', 0))
-        PUBLICHD_RATIO = check_setting_float(CFG, 'PUBLICHD', 'publichd_ratio', 0)
-        PUBLICHD_OPTIONS = check_setting_str(CFG, 'PUBLICHD', 'publichd_options', '')
-
-        SCC = bool(check_setting_int(CFG, 'SCC', 'scc', 0))
-        SCC_USERNAME = check_setting_str(CFG, 'SCC', 'scc_username', '')
-        SCC_PASSWORD = check_setting_str(CFG, 'SCC', 'scc_password', '')
-        SCC_RATIO = check_setting_float(CFG, 'SCC', 'scc_ratio', 0)
-        SCC_OPTIONS = check_setting_str(CFG, 'SCC', 'scc_options', '')
-
-        HDTORRENTS = bool(check_setting_int(CFG, 'HDTORRENTS', 'hdtorrents', 0))
-        HDTORRENTS_USERNAME = check_setting_str(CFG, 'HDTORRENTS', 'hdtorrents_username', '')
-        HDTORRENTS_PASSWORD = check_setting_str(CFG, 'HDTORRENTS', 'hdtorrents_password', '')
-        HDTORRENTS_RATIO = check_setting_float(CFG, 'HDTORRENTS', 'hdtorrents_ratio', 0)
-        HDTORRENTS_OPTIONS = check_setting_str(CFG, 'HDTORRENTS', 'hdtorrents_options', '')
-
-        TORRENTDAY = bool(check_setting_int(CFG, 'TORRENTDAY', 'torrentday', 0))
-        TORRENTDAY_USERNAME = check_setting_str(CFG, 'TORRENTDAY', 'torrentday_username', '')
-        TORRENTDAY_PASSWORD = check_setting_str(CFG, 'TORRENTDAY', 'torrentday_password', '')
-        TORRENTDAY_RATIO = check_setting_float(CFG, 'TORRENTDAY', 'torrentday_ratio', 0)
-        TORRENTDAY_FREELEECH = bool(check_setting_int(CFG, 'TORRENTDAY', 'torrentday_freeleech', 0))
-        TORRENTDAY_OPTIONS = check_setting_str(CFG, 'TORRENTDAY', 'torrentday_options', '')
-
-        HDBITS = bool(check_setting_int(CFG, 'HDBITS', 'hdbits', 0))
-        HDBITS_USERNAME = check_setting_str(CFG, 'HDBITS', 'hdbits_username', '')
-        HDBITS_PASSKEY = check_setting_str(CFG, 'HDBITS', 'hdbits_passkey', '')
-        HDBITS_RATIO = check_setting_float(CFG, 'HDBITS', 'hdbits_ratio', 0)
-        HDBITS_OPTIONS = check_setting_str(CFG, 'HDBITS', 'hdbits_options', '')
-
-        SPEEDCD = bool(check_setting_int(CFG, 'SPEEDCD', 'speedcd', 0))
-        SPEEDCD_USERNAME = check_setting_str(CFG, 'SPEEDCD', 'speedcd_username', '')
-        SPEEDCD_PASSWORD = check_setting_str(CFG, 'SPEEDCD', 'speedcd_password', '')
-        SPEEDCD_RATIO = check_setting_float(CFG, 'SPEEDCD', 'speedcd_ratio', 0)
-        SPEEDCD_FREELEECH = bool(check_setting_int(CFG, 'SPEEDCD', 'speedcd_freeleech', 0))
-
         NZBS = bool(check_setting_int(CFG, 'NZBs', 'nzbs', 0))
         NZBS_UID = check_setting_str(CFG, 'NZBs', 'nzbs_uid', '')
         NZBS_HASH = check_setting_str(CFG, 'NZBs', 'nzbs_hash', '')
@@ -799,12 +648,6 @@ def initialize(consoleLogging=True):
         NEWZBIN = bool(check_setting_int(CFG, 'Newzbin', 'newzbin', 0))
         NEWZBIN_USERNAME = check_setting_str(CFG, 'Newzbin', 'newzbin_username', '')
         NEWZBIN_PASSWORD = check_setting_str(CFG, 'Newzbin', 'newzbin_password', '')
-
-        WOMBLE = bool(check_setting_int(CFG, 'Womble', 'womble', 0))
-
-        OMGWTFNZBS = bool(check_setting_int(CFG, 'omgwtfnzbs', 'omgwtfnzbs', 0))
-        OMGWTFNZBS_USERNAME = check_setting_str(CFG, 'omgwtfnzbs', 'omgwtfnzbs_username', '')
-        OMGWTFNZBS_APIKEY = check_setting_str(CFG, 'omgwtfnzbs', 'omgwtfnzbs_apikey', '')
 
         SAB_USERNAME = check_setting_str(CFG, 'SABnzbd', 'sab_username', '')
         SAB_PASSWORD = check_setting_str(CFG, 'SABnzbd', 'sab_password', '')
@@ -822,7 +665,6 @@ def initialize(consoleLogging=True):
         TORRENT_PASSWORD = check_setting_str(CFG, 'TORRENT', 'torrent_password', '')
         TORRENT_HOST = check_setting_str(CFG, 'TORRENT', 'torrent_host', '')
         TORRENT_PATH = check_setting_str(CFG, 'TORRENT', 'torrent_path', '')
-        TORRENT_RATIO = check_setting_float(CFG, 'TORRENT', 'torrent_ratio', 0)
         TORRENT_SEED_TIME = check_setting_int(CFG, 'TORRENT', 'torrent_seed_time', 0)
         TORRENT_PAUSED = bool(check_setting_int(CFG, 'TORRENT', 'torrent_paused', 0))
         TORRENT_HIGH_BANDWIDTH = bool(check_setting_int(CFG, 'TORRENT', 'torrent_high_bandwidth', 0))
@@ -872,7 +714,7 @@ def initialize(consoleLogging=True):
             check_setting_int(CFG, 'Twitter', 'twitter_notify_onsubtitledownload', 0))
         TWITTER_USERNAME = check_setting_str(CFG, 'Twitter', 'twitter_username', '')
         TWITTER_PASSWORD = check_setting_str(CFG, 'Twitter', 'twitter_password', '')
-        TWITTER_PREFIX = check_setting_str(CFG, 'Twitter', 'twitter_prefix', 'Sick Beard')
+        TWITTER_PREFIX = check_setting_str(CFG, 'Twitter', 'twitter_prefix', 'SickRage')
 
         USE_BOXCAR = bool(check_setting_int(CFG, 'Boxcar', 'use_boxcar', 0))
         BOXCAR_NOTIFY_ONSNATCH = bool(check_setting_int(CFG, 'Boxcar', 'boxcar_notify_onsnatch', 0))
@@ -1020,12 +862,13 @@ def initialize(consoleLogging=True):
         DATE_PRESET = check_setting_str(CFG, 'GUI', 'date_preset', '%x')
         TIME_PRESET_W_SECONDS = check_setting_str(CFG, 'GUI', 'time_preset', '%I:%M:%S %p')
         TIME_PRESET = TIME_PRESET_W_SECONDS.replace(u":%S", u"")
+        TIMEZONE_DISPLAY = check_setting_str(CFG, 'GUI', 'timezone_display', 'network')
 
         NEWZNAB_DATA = check_setting_str(CFG, 'Newznab', 'newznab_data', '')
         newznabProviderList = providers.getNewznabProviderList(NEWZNAB_DATA)
 
-        torrentRssData = check_setting_str(CFG, 'TorrentRss', 'torrentrss_data', '')
-        torrentRssProviderList = providers.getTorrentRssProviderList(torrentRssData)
+        TORRENTRSS_DATA = check_setting_str(CFG, 'TorrentRss', 'torrentrss_data', '')
+        torrentRssProviderList = providers.getTorrentRssProviderList(TORRENTRSS_DATA)
 
         if not os.path.isfile(CONFIG_FILE):
             logger.log(u"Unable to find '" + CONFIG_FILE + "', all settings will be default!", logger.DEBUG)
@@ -1101,7 +944,8 @@ def initialize(consoleLogging=True):
             properFinderScheduler.silent = True
 
         autoPostProcesserScheduler = scheduler.Scheduler(autoPostProcesser.PostProcesser(),
-                                                         cycleTime=datetime.timedelta(minutes=10),
+                                                         cycleTime=datetime.timedelta(
+                                                             minutes=AUTOPOSTPROCESSER_FREQUENCY),
                                                          threadName="POSTPROCESSER",
                                                          runImmediately=True)
         if not PROCESS_AUTOMATICALLY:
@@ -1123,27 +967,104 @@ def initialize(consoleLogging=True):
                                                                       runImmediately=BACKLOG_STARTUP)
 
         dailySearchScheduler = scheduler.Scheduler(dailysearcher.DailySearcher(),
-                                                 cycleTime=datetime.timedelta(minutes=DAILYSEARCH_FREQUENCY),
-                                                 threadName="DAILYSEARCHER",
-                                                 silent=True,
-                                                 runImmediately=True)
+                                                   cycleTime=datetime.timedelta(minutes=DAILYSEARCH_FREQUENCY),
+                                                   threadName="DAILYSEARCHER",
+                                                   silent=True,
+                                                   runImmediately=DAILYSEARCH_STARTUP)
 
         subtitlesFinderScheduler = scheduler.Scheduler(subtitles.SubtitlesFinder(),
                                                        cycleTime=datetime.timedelta(hours=SUBTITLES_FINDER_FREQUENCY),
                                                        threadName="FINDSUBTITLES",
                                                        runImmediately=True)
 
-        updateRSSScheduler = scheduler.Scheduler(rssupdater.RSSUpdater(),
-                                                 cycleTime=datetime.timedelta(minutes=RSSUPDATE_FREQUENCY),
-                                                 threadName="RSSUPDATER",
-                                                 silent=True,
-                                                 runImmediately=RSSUPDATE_STARTUP)
-
         if not USE_SUBTITLES:
             subtitlesFinderScheduler.silent = True
 
         showList = []
         loadingShowList = {}
+
+        # dynamically load provider settings
+        for curTorrentProvider in [curProvider for curProvider in providers.sortedProviderList() if
+                                   curProvider.providerType == GenericProvider.TORRENT]:
+            curTorrentProvider.enabled = bool(check_setting_int(CFG, curTorrentProvider.getID().upper(),
+                                                                curTorrentProvider.getID(), 0))
+            if hasattr(curTorrentProvider, 'api_key'):
+                curTorrentProvider.api_key = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                               curTorrentProvider.getID() + '_api_key', '')
+            if hasattr(curTorrentProvider, 'hash'):
+                curTorrentProvider.hash = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                            curTorrentProvider.getID() + '_hash', '')
+            if hasattr(curTorrentProvider, 'digest'):
+                curTorrentProvider.digest = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                              curTorrentProvider.getID() + '_digest', '')
+            if hasattr(curTorrentProvider, 'username'):
+                curTorrentProvider.username = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                                curTorrentProvider.getID() + '_username', '')
+            if hasattr(curTorrentProvider, 'password'):
+                curTorrentProvider.password = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                                curTorrentProvider.getID() + '_password', '')
+            if hasattr(curTorrentProvider, 'passkey'):
+                curTorrentProvider.passkey = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                               curTorrentProvider.getID() + '_passkey', '')
+            if hasattr(curTorrentProvider, 'proxy'):
+                curTorrentProvider.proxy.enabled = bool(check_setting_int(CFG, curTorrentProvider.getID().upper(),
+                                                                          curTorrentProvider.getID() + '_proxy', 0))
+                if hasattr(curTorrentProvider.proxy, 'url'):
+                    curTorrentProvider.proxy.url = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                                     curTorrentProvider.getID() + '_proxy_url', '')
+            if hasattr(curTorrentProvider, 'confirmed'):
+                curTorrentProvider.confirmed = bool(check_setting_int(CFG, curTorrentProvider.getID().upper(),
+                                                                      curTorrentProvider.getID() + '_confirmed', 0))
+            if hasattr(curTorrentProvider, 'options'):
+                curTorrentProvider.options = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                               curTorrentProvider.getID() + '_options', '')
+            if hasattr(curTorrentProvider, 'ratio'):
+                curTorrentProvider.ratio = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                                     curTorrentProvider.getID() + '_ratio', '')
+            if hasattr(curTorrentProvider, 'minseed'):
+                curTorrentProvider.minseed = check_setting_int(CFG, curTorrentProvider.getID().upper(),
+                                                               curTorrentProvider.getID() + '_minseed', 0)
+            if hasattr(curTorrentProvider, 'minleech'):
+                curTorrentProvider.minleech = check_setting_int(CFG, curTorrentProvider.getID().upper(),
+                                                                curTorrentProvider.getID() + '_minleech', 0)
+            if hasattr(curTorrentProvider, 'freeleech'):
+                curTorrentProvider.freeleech = bool(check_setting_int(CFG, curTorrentProvider.getID().upper(),
+                                                                      curTorrentProvider.getID() + '_freeleech', 0))
+            if hasattr(curTorrentProvider, 'search_mode'):
+                curTorrentProvider.search_mode = check_setting_str(CFG, curTorrentProvider.getID().upper(),
+                                                                   curTorrentProvider.getID() + '_search_mode',
+                                                                   'eponly')
+            if hasattr(curTorrentProvider, 'search_fallback'):
+                curTorrentProvider.search_fallback = bool(check_setting_int(CFG, curTorrentProvider.getID().upper(),
+                                                                            curTorrentProvider.getID() + '_search_fallback',
+                                                                            0))
+            if hasattr(curTorrentProvider, 'backlog_only'):
+                curTorrentProvider.backlog_only = bool(check_setting_int(CFG, curTorrentProvider.getID().upper(),
+                                                                         curTorrentProvider.getID() + '_backlog_only',
+                                                                         0))
+
+        for curNzbProvider in [curProvider for curProvider in providers.sortedProviderList() if
+                               curProvider.providerType == GenericProvider.NZB]:
+            curNzbProvider.enabled = bool(
+                check_setting_int(CFG, curNzbProvider.getID().upper(), curNzbProvider.getID(), 0))
+            if hasattr(curNzbProvider, 'api_key'):
+                curNzbProvider.api_key = check_setting_str(CFG, curNzbProvider.getID().upper(),
+                                                           curNzbProvider.getID() + '_api_key', '')
+            if hasattr(curNzbProvider, 'username'):
+                curNzbProvider.username = check_setting_str(CFG, curNzbProvider.getID().upper(),
+                                                            curNzbProvider.getID() + '_username', '')
+            if hasattr(curNzbProvider, 'search_mode'):
+                curNzbProvider.search_mode = check_setting_str(CFG, curNzbProvider.getID().upper(),
+                                                               curNzbProvider.getID() + '_search_mode',
+                                                               'eponly')
+            if hasattr(curNzbProvider, 'search_fallback'):
+                curNzbProvider.search_fallback = bool(check_setting_int(CFG, curNzbProvider.getID().upper(),
+                                                                        curNzbProvider.getID() + '_search_fallback',
+                                                                        0))
+            if hasattr(curNzbProvider, 'backlog_only'):
+                curNzbProvider.backlog_only = bool(check_setting_int(CFG, curNzbProvider.getID().upper(),
+                                                                     curNzbProvider.getID() + '_backlog_only',
+                                                                     0))
 
         try:
             url = 'http://raw.github.com/echel0n/sickrage-init/master/settings.ini'
@@ -1154,7 +1075,8 @@ def initialize(consoleLogging=True):
                     curProvider.cache._clearCache()
                 CLEAR_CACHE = clear_cache
                 save_config()
-        except:pass
+        except:
+            pass
 
         __INITIALIZED__ = True
         return True
@@ -1165,7 +1087,7 @@ def start():
         showUpdateScheduler, versionCheckScheduler, showQueueScheduler, \
         properFinderScheduler, autoPostProcesserScheduler, searchQueueScheduler, \
         subtitlesFinderScheduler, started, USE_SUBTITLES, \
-        traktWatchListCheckerSchedular, updateRSSScheduler, dailySearchScheduler, started
+        traktWatchListCheckerSchedular, dailySearchScheduler, started
 
     with INIT_LOCK:
 
@@ -1173,9 +1095,6 @@ def start():
 
             # start the version checker
             versionCheckScheduler.thread.start()
-
-            # start the RSS cache updater
-            updateRSSScheduler.thread.start()
 
             # start the daily search scheduler
             dailySearchScheduler.thread.start()
@@ -1211,7 +1130,7 @@ def start():
 def halt():
     global __INITIALIZED__, backlogSearchScheduler, showUpdateScheduler, \
         showQueueScheduler, properFinderScheduler, autoPostProcesserScheduler, searchQueueScheduler, \
-        subtitlesFinderScheduler, updateRSSScheduler, dailySearchScheduler, started, \
+        subtitlesFinderScheduler, dailySearchScheduler, started, \
         traktWatchListCheckerSchedular
 
     with INIT_LOCK:
@@ -1292,13 +1211,6 @@ def halt():
             except:
                 pass
 
-            updateRSSScheduler.abort = True
-            logger.log(u"Waiting for the RSSUPDATER thread to exit")
-            try:
-                updateRSSScheduler.thread.join(10)
-            except:
-                pass
-
             __INITIALIZED__ = False
 
 
@@ -1312,10 +1224,12 @@ def remove_pid_file(PIDFILE):
 
     return True
 
+
 def sig_handler(signum=None, frame=None):
     if type(signum) != type(None):
         logger.log(u"Signal %i caught, saving and exiting..." % int(signum))
         saveAndShutdown()
+
 
 def saveAll():
     global showList
@@ -1419,6 +1333,7 @@ def save_config():
     new_config['General']['web_username'] = WEB_USERNAME
     new_config['General']['web_password'] = helpers.encrypt(WEB_PASSWORD, ENCRYPTION_VERSION)
     new_config['General']['localhost_ip'] = LOCALHOST_IP
+    new_config['General']['cpu_preset'] = CPU_PRESET
     new_config['General']['anon_redirect'] = ANON_REDIRECT
     new_config['General']['use_api'] = int(USE_API)
     new_config['General']['api_key'] = API_KEY
@@ -1432,20 +1347,21 @@ def save_config():
     new_config['General']['nzb_method'] = NZB_METHOD
     new_config['General']['torrent_method'] = TORRENT_METHOD
     new_config['General']['usenet_retention'] = int(USENET_RETENTION)
+    new_config['General']['autopostprocesser_frequency'] = int(AUTOPOSTPROCESSER_FREQUENCY)
     new_config['General']['dailysearch_frequency'] = int(DAILYSEARCH_FREQUENCY)
-    new_config['General']['rssupdate_frequency'] = int(RSSUPDATE_FREQUENCY)
     new_config['General']['backlog_frequency'] = int(BACKLOG_FREQUENCY)
     new_config['General']['update_frequency'] = int(UPDATE_FREQUENCY)
     new_config['General']['download_propers'] = int(DOWNLOAD_PROPERS)
     new_config['General']['check_propers_interval'] = CHECK_PROPERS_INTERVAL
-    new_config['General']['prefer_episode_releases'] = int(PREFER_EPISODE_RELEASES)
     new_config['General']['allow_high_priority'] = int(ALLOW_HIGH_PRIORITY)
-    new_config['General']['rssupdate_startup'] = int(RSSUPDATE_STARTUP)
+    new_config['General']['dailysearch_startup'] = int(DAILYSEARCH_STARTUP)
     new_config['General']['backlog_startup'] = int(BACKLOG_STARTUP)
+    new_config['General']['skip_removed_files'] = int(SKIP_REMOVED_FILES)
     new_config['General']['quality_default'] = int(QUALITY_DEFAULT)
     new_config['General']['status_default'] = int(STATUS_DEFAULT)
     new_config['General']['flatten_folders_default'] = int(FLATTEN_FOLDERS_DEFAULT)
     new_config['General']['indexer_default'] = int(INDEXER_DEFAULT)
+    new_config['General']['indexer_timeout'] = int(INDEXER_TIMEOUT)
     new_config['General']['provider_order'] = ' '.join(PROVIDER_ORDER)
     new_config['General']['version_notify'] = int(VERSION_NOTIFY)
     new_config['General']['auto_update'] = int(AUTO_UPDATE)
@@ -1494,100 +1410,83 @@ def save_config():
     new_config['Blackhole']['nzb_dir'] = NZB_DIR
     new_config['Blackhole']['torrent_dir'] = TORRENT_DIR
 
-    new_config['EZRSS'] = {}
-    new_config['EZRSS']['ezrss'] = int(EZRSS)
-    new_config['EZRSS']['ezrss_ratio'] = float(EZRSS_RATIO)
+    # dynamically save provider settings
+    for curTorrentProvider in [curProvider for curProvider in providers.sortedProviderList() if
+                               curProvider.providerType == GenericProvider.TORRENT]:
+        new_config[curTorrentProvider.getID().upper()] = {}
+        new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID()] = int(curTorrentProvider.enabled)
+        if hasattr(curTorrentProvider, 'digest'):
+            new_config[curTorrentProvider.getID().upper()][
+                curTorrentProvider.getID() + '_digest'] = curTorrentProvider.digest
+        if hasattr(curTorrentProvider, 'hash'):
+            new_config[curTorrentProvider.getID().upper()][
+                curTorrentProvider.getID() + '_hash'] = curTorrentProvider.hash
+        if hasattr(curTorrentProvider, 'api_key'):
+            new_config[curTorrentProvider.getID().upper()][
+                curTorrentProvider.getID() + '_api_key'] = curTorrentProvider.api_key
+        if hasattr(curTorrentProvider, 'username'):
+            new_config[curTorrentProvider.getID().upper()][
+                curTorrentProvider.getID() + '_username'] = curTorrentProvider.username
+        if hasattr(curTorrentProvider, 'password'):
+            new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID() + '_password'] = helpers.encrypt(
+                curTorrentProvider.password, ENCRYPTION_VERSION)
+        if hasattr(curTorrentProvider, 'passkey'):
+            new_config[curTorrentProvider.getID().upper()][
+                curTorrentProvider.getID() + '_passkey'] = curTorrentProvider.passkey
+        if hasattr(curTorrentProvider, 'confirmed'):
+            new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID() + '_confirmed'] = int(
+                curTorrentProvider.confirmed)
+        if hasattr(curTorrentProvider, 'ratio'):
+            new_config[curTorrentProvider.getID().upper()][
+                curTorrentProvider.getID() + '_ratio'] = curTorrentProvider.ratio
+        if hasattr(curTorrentProvider, 'minseed'):
+            new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID() + '_minseed'] = int(
+                curTorrentProvider.minseed)
+        if hasattr(curTorrentProvider, 'minleech'):
+            new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID() + '_minleech'] = int(
+                curTorrentProvider.minleech)
+        if hasattr(curTorrentProvider, 'options'):
+            new_config[curTorrentProvider.getID().upper()][
+                curTorrentProvider.getID() + '_options'] = curTorrentProvider.options
+        if hasattr(curTorrentProvider, 'proxy'):
+            new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID() + '_proxy'] = int(
+                curTorrentProvider.proxy.enabled)
+            if hasattr(curTorrentProvider.proxy, 'url'):
+                new_config[curTorrentProvider.getID().upper()][
+                    curTorrentProvider.getID() + '_proxy_url'] = curTorrentProvider.proxy.url
+        if hasattr(curTorrentProvider, 'freeleech'):
+            new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID() + '_freeleech'] = int(
+                curTorrentProvider.freeleech)
+        if hasattr(curTorrentProvider, 'search_mode'):
+            new_config[curTorrentProvider.getID().upper()][
+                curTorrentProvider.getID() + '_search_mode'] = curTorrentProvider.search_mode
+        if hasattr(curTorrentProvider, 'search_fallback'):
+            new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID() + '_search_fallback'] = int(
+                curTorrentProvider.search_fallback)
+        if hasattr(curTorrentProvider, 'backlog_only'):
+            new_config[curTorrentProvider.getID().upper()][curTorrentProvider.getID() + '_backlog_only'] = int(
+                curTorrentProvider.backlog_only)
 
-    new_config['TVTORRENTS'] = {}
-    new_config['TVTORRENTS']['tvtorrents'] = int(TVTORRENTS)
-    new_config['TVTORRENTS']['tvtorrents_digest'] = TVTORRENTS_DIGEST
-    new_config['TVTORRENTS']['tvtorrents_hash'] = TVTORRENTS_HASH
-    new_config['TVTORRENTS']['tvtorrents_ratio'] = float(TVTORRENTS_RATIO)
-    new_config['TVTORRENTS']['tvtorrents_options'] = TVTORRENTS_OPTIONS
+    for curNzbProvider in [curProvider for curProvider in providers.sortedProviderList() if
+                           curProvider.providerType == GenericProvider.NZB]:
+        new_config[curNzbProvider.getID().upper()] = {}
+        new_config[curNzbProvider.getID().upper()][curNzbProvider.getID()] = int(curNzbProvider.enabled)
 
-    new_config['BTN'] = {}
-    new_config['BTN']['btn'] = int(BTN)
-    new_config['BTN']['btn_api_key'] = BTN_API_KEY
-    new_config['BTN']['btn_ratio'] = float(BTN_RATIO)
-    new_config['BTN']['btn_options'] = BTN_OPTIONS
-
-    new_config['THEPIRATEBAY'] = {}
-    new_config['THEPIRATEBAY']['thepiratebay'] = int(THEPIRATEBAY)
-    new_config['THEPIRATEBAY']['thepiratebay_ratio'] = float(THEPIRATEBAY_RATIO)
-    new_config['THEPIRATEBAY']['thepiratebay_trusted'] = int(THEPIRATEBAY_TRUSTED)
-    new_config['THEPIRATEBAY']['thepiratebay_proxy'] = int(THEPIRATEBAY_PROXY)
-    new_config['THEPIRATEBAY']['thepiratebay_proxy_url'] = THEPIRATEBAY_PROXY_URL
-    new_config['THEPIRATEBAY']['thepiratebay_blacklist'] = THEPIRATEBAY_BLACKLIST
-    new_config['THEPIRATEBAY']['thepiratebay_options'] = THEPIRATEBAY_OPTIONS
-
-    new_config['TORRENTLEECH'] = {}
-    new_config['TORRENTLEECH']['torrentleech'] = int(TORRENTLEECH)
-    new_config['TORRENTLEECH']['torrentleech_username'] = TORRENTLEECH_USERNAME
-    new_config['TORRENTLEECH']['torrentleech_password'] = helpers.encrypt(TORRENTLEECH_PASSWORD, ENCRYPTION_VERSION)
-    new_config['TORRENTLEECH']['torrentleech_ratio'] = float(TORRENTLEECH_RATIO)
-    new_config['TORRENTLEECH']['torrentleech_options'] = TORRENTLEECH_OPTIONS
-
-    new_config['IPTORRENTS'] = {}
-    new_config['IPTORRENTS']['iptorrents'] = int(IPTORRENTS)
-    new_config['IPTORRENTS']['iptorrents_username'] = IPTORRENTS_USERNAME
-    new_config['IPTORRENTS']['iptorrents_password'] = helpers.encrypt(IPTORRENTS_PASSWORD, ENCRYPTION_VERSION)
-    new_config['IPTORRENTS']['iptorrents_ratio'] = float(IPTORRENTS_RATIO)
-    new_config['IPTORRENTS']['iptorrents_freeleech'] = int(IPTORRENTS_FREELEECH)
-    new_config['IPTORRENTS']['iptorrents_options'] = IPTORRENTS_OPTIONS
-
-    new_config['NEXTGEN'] = {}
-    new_config['NEXTGEN']['nextgen'] = int(NEXTGEN)
-    new_config['NEXTGEN']['nextgen_username'] = NEXTGEN_USERNAME
-    new_config['NEXTGEN']['nextgen_password'] = helpers.encrypt(NEXTGEN_PASSWORD, ENCRYPTION_VERSION)
-    new_config['NEXTGEN']['nextgen_ratio'] = float(NEXTGEN_RATIO)
-    new_config['NEXTGEN']['nextgen_options'] = NEXTGEN_OPTIONS
-
-    new_config['KAT'] = {}
-    new_config['KAT']['kat'] = int(KAT)
-    new_config['KAT']['kat_ratio'] = float(KAT_RATIO)
-    new_config['KAT']['kat_verified'] = int(KAT_VERIFIED)
-    new_config['KAT']['kat_options'] = KAT_OPTIONS
-
-    new_config['PUBLICHD'] = {}
-    new_config['PUBLICHD']['publichd'] = int(PUBLICHD)
-    new_config['PUBLICHD']['publichd_ratio'] = float(PUBLICHD_RATIO)
-    new_config['PUBLICHD']['publichd_options'] = PUBLICHD_OPTIONS
-
-    new_config['SCC'] = {}
-    new_config['SCC']['scc'] = int(SCC)
-    new_config['SCC']['scc_username'] = SCC_USERNAME
-    new_config['SCC']['scc_password'] = helpers.encrypt(SCC_PASSWORD, ENCRYPTION_VERSION)
-    new_config['SCC']['scc_ratio'] = float(SCC_RATIO)
-    new_config['SCC']['scc_options'] = SCC_OPTIONS
-
-    new_config['HDTORRENTS'] = {}
-    new_config['HDTORRENTS']['hdtorrents'] = int(HDTORRENTS)
-    new_config['HDTORRENTS']['hdtorrents_username'] = HDTORRENTS_USERNAME
-    new_config['HDTORRENTS']['hdtorrents_password'] = helpers.encrypt(HDTORRENTS_PASSWORD, ENCRYPTION_VERSION)
-    new_config['HDTORRENTS']['hdtorrents_ratio'] = float(HDTORRENTS_RATIO)
-    new_config['HDTORRENTS']['hdtorrents_options'] = HDTORRENTS_OPTIONS
-
-    new_config['TORRENTDAY'] = {}
-    new_config['TORRENTDAY']['torrentday'] = int(TORRENTDAY)
-    new_config['TORRENTDAY']['torrentday_username'] = TORRENTDAY_USERNAME
-    new_config['TORRENTDAY']['torrentday_password'] = helpers.encrypt(TORRENTDAY_PASSWORD, ENCRYPTION_VERSION)
-    new_config['TORRENTDAY']['torrentday_ratio'] = float(TORRENTDAY_RATIO)
-    new_config['TORRENTDAY']['torrentday_freeleech'] = int(TORRENTDAY_FREELEECH)
-    new_config['TORRENTDAY']['torrentday_options'] = TORRENTDAY_OPTIONS
-
-    new_config['HDBITS'] = {}
-    new_config['HDBITS']['hdbits'] = int(HDBITS)
-    new_config['HDBITS']['hdbits_username'] = HDBITS_USERNAME
-    new_config['HDBITS']['hdbits_passkey'] = HDBITS_PASSKEY
-    new_config['HDBITS']['hdbits_ratio'] = float(HDBITS_RATIO)
-    new_config['HDBITS']['hdbits_options'] = HDBITS_OPTIONS
-
-    new_config['SPEEDCD'] = {}
-    new_config['SPEEDCD']['speedcd'] = int(SPEEDCD)
-    new_config['SPEEDCD']['speedcd_username'] = SPEEDCD_USERNAME
-    new_config['SPEEDCD']['speedcd_password'] = helpers.encrypt(SPEEDCD_PASSWORD, ENCRYPTION_VERSION)
-    new_config['SPEEDCD']['speedcd_ratio'] = float(SPEEDCD_RATIO)
-    new_config['SPEEDCD']['speedcd_freeleech'] = int(SPEEDCD_FREELEECH)
+        if hasattr(curNzbProvider, 'api_key'):
+            new_config[curNzbProvider.getID().upper()][
+                curNzbProvider.getID() + '_api_key'] = curNzbProvider.api_key
+        if hasattr(curNzbProvider, 'username'):
+            new_config[curNzbProvider.getID().upper()][
+                curNzbProvider.getID() + '_username'] = curNzbProvider.username
+        if hasattr(curNzbProvider, 'search_mode'):
+            new_config[curNzbProvider.getID().upper()][
+                curNzbProvider.getID() + '_search_mode'] = curNzbProvider.search_mode
+        if hasattr(curNzbProvider, 'search_fallback'):
+            new_config[curNzbProvider.getID().upper()][curNzbProvider.getID() + '_search_fallback'] = int(
+                curNzbProvider.search_fallback)
+        if hasattr(curNzbProvider, 'backlog_only'):
+            new_config[curNzbProvider.getID().upper()][curNzbProvider.getID() + '_backlog_only'] = int(
+                curNzbProvider.backlog_only)
 
     new_config['NZBs'] = {}
     new_config['NZBs']['nzbs'] = int(NZBS)
@@ -1598,14 +1497,6 @@ def save_config():
     new_config['Newzbin']['newzbin'] = int(NEWZBIN)
     new_config['Newzbin']['newzbin_username'] = NEWZBIN_USERNAME
     new_config['Newzbin']['newzbin_password'] = helpers.encrypt(NEWZBIN_PASSWORD, ENCRYPTION_VERSION)
-
-    new_config['Womble'] = {}
-    new_config['Womble']['womble'] = int(WOMBLE)
-
-    new_config['omgwtfnzbs'] = {}
-    new_config['omgwtfnzbs']['omgwtfnzbs'] = int(OMGWTFNZBS)
-    new_config['omgwtfnzbs']['omgwtfnzbs_username'] = OMGWTFNZBS_USERNAME
-    new_config['omgwtfnzbs']['omgwtfnzbs_apikey'] = OMGWTFNZBS_APIKEY
 
     new_config['SABnzbd'] = {}
     new_config['SABnzbd']['sab_username'] = SAB_USERNAME
@@ -1627,7 +1518,6 @@ def save_config():
     new_config['TORRENT']['torrent_password'] = helpers.encrypt(TORRENT_PASSWORD, ENCRYPTION_VERSION)
     new_config['TORRENT']['torrent_host'] = TORRENT_HOST
     new_config['TORRENT']['torrent_path'] = TORRENT_PATH
-    new_config['TORRENT']['torrent_ratio'] = float(TORRENT_RATIO)
     new_config['TORRENT']['torrent_seed_time'] = int(TORRENT_SEED_TIME)
     new_config['TORRENT']['torrent_paused'] = int(TORRENT_PAUSED)
     new_config['TORRENT']['torrent_high_bandwidth'] = int(TORRENT_HIGH_BANDWIDTH)
@@ -1805,6 +1695,7 @@ def save_config():
     new_config['GUI']['coming_eps_missed_range'] = int(COMING_EPS_MISSED_RANGE)
     new_config['GUI']['date_preset'] = DATE_PRESET
     new_config['GUI']['time_preset'] = TIME_PRESET_W_SECONDS
+    new_config['GUI']['timezone_display'] = TIMEZONE_DISPLAY
 
     new_config['Subtitles'] = {}
     new_config['Subtitles']['use_subtitles'] = int(USE_SUBTITLES)

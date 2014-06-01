@@ -1,32 +1,29 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
-import time
 import os.path
 import datetime
 import threading
 import re
 import glob
-from time import sleep
 import traceback
-import shutil
 
 import sickbeard
 
@@ -54,7 +51,6 @@ from common import DOWNLOADED, SNATCHED, SNATCHED_PROPER, SNATCHED_BEST, ARCHIVE
     UNKNOWN, FAILED
 from common import NAMING_DUPLICATE, NAMING_EXTEND, NAMING_LIMITED_EXTEND, NAMING_SEPARATED_REPEAT, \
     NAMING_LIMITED_EXTEND_E_PREFIXED
-
 
 class TVShow(object):
     def __init__(self, indexer, indexerid, lang=""):
@@ -858,21 +854,23 @@ class TVShow(object):
 
             #Rename dict keys without spaces for DB upsert
             self.imdb_info = dict(
-                (k.replace(' ', '_'), f(v) if hasattr(v, 'keys') else v) for k, v in imdb_info.items())
+                (k.replace(' ', '_'), k(v) if hasattr(v, 'keys') else v) for k, v in imdb_info.items())
             logger.log(str(self.indexerid) + u": Obtained info from IMDb ->" + str(self.imdb_info), logger.DEBUG)
 
     def nextEpisode(self):
+
         logger.log(str(self.indexerid) + ": Finding the episode which airs next", logger.DEBUG)
 
         myDB = db.DBConnection()
-        innerQuery = "SELECT airdate FROM tv_episodes WHERE showid = ? AND airdate >= ? AND status = ? ORDER BY airdate ASC LIMIT 1"
-        innerParams = [self.indexerid, datetime.date.today().toordinal(), UNAIRED]
-        query = "SELECT * FROM tv_episodes WHERE showid = ? AND airdate >= ? AND airdate <= (" + innerQuery + ") and status = ?"
-        params = [self.indexerid, datetime.date.today().toordinal()] + innerParams + [UNAIRED]
+        innerQuery = "SELECT airdate FROM tv_episodes WHERE showid = ? AND airdate >= ? AND status in (?,?) ORDER BY airdate ASC LIMIT 1"
+        innerParams = [self.indexerid, datetime.date.today().toordinal(), UNAIRED, WANTED]
+        query = "SELECT * FROM tv_episodes WHERE showid = ? AND airdate >= ? AND airdate <= (" + innerQuery + ") and status in (?,?)"
+        params = [self.indexerid, datetime.date.today().toordinal()] + innerParams + [UNAIRED, WANTED]
         sqlResults = myDB.select(query, params)
 
         if sqlResults == None or len(sqlResults) == 0:
-            logger.log(str(self.indexerid) + u": No episode found... need to implement show status", logger.DEBUG)
+            logger.log(str(self.indexerid) + u": No episode found... need to implement a show status",
+                       logger.DEBUG)
             return []
         else:
             logger.log(str(self.indexerid) + u": Found episode " + str(sqlResults[0]["season"]) + "x" + str(
@@ -939,20 +937,22 @@ class TVShow(object):
             if not ek.ek(os.path.isfile, curLoc) or not os.path.normpath(curLoc).startswith(
                     os.path.normpath(self.location)):
 
-                with curEp.lock:
-                    # if it used to have a file associated with it and it doesn't anymore then set it to IGNORED
-                    if curEp.location and curEp.status in Quality.DOWNLOADED:
-                        logger.log(str(self.indexerid) + u": Location for " + str(season) + "x" + str(
-                            episode) + " doesn't exist, removing it and changing our status to IGNORED", logger.DEBUG)
-                        curEp.status = IGNORED
-                        curEp.subtitles = list()
-                        curEp.subtitles_searchcount = 0
-                        curEp.subtitles_lastsearch = str(datetime.datetime.min)
-                    curEp.location = ''
-                    curEp.hasnfo = False
-                    curEp.hastbn = False
-                    curEp.release_name = ''
-                    curEp.saveToDB()
+                # check if downloaded files still exist, update our data if this has changed
+                if not sickbeard.SKIP_REMOVED_FILES:
+                    with curEp.lock:
+                        # if it used to have a file associated with it and it doesn't anymore then set it to IGNORED
+                        if curEp.location and curEp.status in Quality.DOWNLOADED:
+                            logger.log(str(self.indexerid) + u": Location for " + str(season) + "x" + str(
+                                episode) + " doesn't exist, removing it and changing our status to IGNORED", logger.DEBUG)
+                            curEp.status = IGNORED
+                            curEp.subtitles = list()
+                            curEp.subtitles_searchcount = 0
+                            curEp.subtitles_lastsearch = str(datetime.datetime.min)
+                        curEp.location = ''
+                        curEp.hasnfo = False
+                        curEp.hastbn = False
+                        curEp.release_name = ''
+                        curEp.saveToDB()
             else:
                 # the file exists, set its modify file stamp
                 if sickbeard.AIRDATE_EPISODES:
@@ -1066,7 +1066,8 @@ class TVShow(object):
         if self.status:
             toReturn += "status: " + self.status + "\n"
         toReturn += "startyear: " + str(self.startyear) + "\n"
-        toReturn += "genre: " + self.genre + "\n"
+        if self.genre:
+            toReturn += "genre: " + self.genre + "\n"
         toReturn += "classification: " + self.classification + "\n"
         toReturn += "runtime: " + str(self.runtime) + "\n"
         toReturn += "quality: " + str(self.quality) + "\n"

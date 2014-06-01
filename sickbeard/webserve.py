@@ -1,20 +1,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
@@ -26,10 +26,7 @@ import re
 import threading
 import datetime
 import random
-import locale
 import logging
-import itertools
-import operator
 
 from Cheetah.Template import Template
 import cherrypy
@@ -54,7 +51,7 @@ from sickbeard import failedProcessor
 from sickbeard import network_timezones
 
 from sickbeard.providers import newznab, rsstorrent
-from sickbeard.common import Quality, Overview, statusStrings, qualityPresetStrings
+from sickbeard.common import Quality, Overview, statusStrings, qualityPresetStrings, cpu_presets
 from sickbeard.common import SNATCHED, SKIPPED, UNAIRED, IGNORED, ARCHIVED, WANTED, FAILED
 from sickbeard.common import SD, HD720p, HD1080p
 from sickbeard.exceptions import ex
@@ -81,15 +78,19 @@ except ImportError:
 
 from sickbeard import browser
 
+
 def _handle_reverse_proxy():
     if sickbeard.HANDLE_REVERSE_PROXY:
         cherrypy.lib.cptools.proxy()
 
+
 cherrypy.tools.handle_reverse_proxy = cherrypy.Tool('before_handler', _handle_reverse_proxy)
+
 
 class PageTemplate(Template):
     def __init__(self, *args, **KWs):
-        KWs['file'] = os.path.join(sickbeard.PROG_DIR, "gui/" + sickbeard.GUI_NAME + "/interfaces/default/",KWs['file'])
+        KWs['file'] = os.path.join(sickbeard.PROG_DIR, "gui/" + sickbeard.GUI_NAME + "/interfaces/default/",
+                                   KWs['file'])
         super(PageTemplate, self).__init__(*args, **KWs)
         self.sbRoot = sickbeard.WEB_ROOT
         self.sbHttpPort = sickbeard.WEB_PORT
@@ -101,7 +102,6 @@ class PageTemplate(Template):
             self.sbHost = re.match("^\[.*\]", cherrypy.request.headers['Host'], re.X | re.M | re.S).group(0)
         else:
             self.sbHost = re.match("^[^:]+", cherrypy.request.headers['Host'], re.X | re.M | re.S).group(0)
-        self.projectHomePage = "http://code.google.com/p/sickbeard/"
 
         if sickbeard.NZBS and sickbeard.NZBS_UID and sickbeard.NZBS_HASH:
             logger.log(u"NZBs.org has been replaced, please check the config to configure the new provider!",
@@ -206,8 +206,8 @@ class ManageSearches:
         #t.backlogPI = sickbeard.backlogSearchScheduler.action.getProgressIndicator()
         t.backlogPaused = sickbeard.searchQueueScheduler.action.is_backlog_paused()  # @UndefinedVariable
         t.backlogRunning = sickbeard.searchQueueScheduler.action.is_backlog_in_progress()  # @UndefinedVariable
-        t.searchStatus = sickbeard.dailySearchScheduler.action.amActive  # @UndefinedVariable
-        t.rssStatus = sickbeard.updateRSSScheduler.action.amActive  # @UndefinedVariable
+        t.dailySearchStatus = sickbeard.searchQueueScheduler.action.is_dailysearch_in_progress()  # @UndefinedVariable
+        t.findPropersStatus = sickbeard.properFinderScheduler.action.amActive  # @UndefinedVariable
 
         t.submenu = ManageMenu()
 
@@ -232,19 +232,18 @@ class ManageSearches:
         result = sickbeard.dailySearchScheduler.forceRun()
         if result:
             logger.log(u"Daily search forced")
-            ui.notifications.message('Daily search for new releases started')
+            ui.notifications.message('Daily search started')
 
         redirect("/manage/manageSearches/")
 
     @cherrypy.expose
-    def forceRSS(self):
+    def forceFindPropers(self):
 
         # force it to run the next time it looks
-        result = sickbeard.updateRSSScheduler.forceRun()
+        result = sickbeard.properFinderScheduler.forceRun()
         if result:
-            logger.log(u"RSS cache update forced")
-            ui.notifications.message('RSS cache update started',
-                                     'Note: RSS feeds may not be updated if retrieved recently')
+            logger.log(u"Find propers search forced")
+            ui.notifications.message('Find propers search started')
 
         redirect("/manage/manageSearches/")
 
@@ -865,9 +864,9 @@ class History:
         for sql_result in sqlResults:
 
             if not any((history['show_id'] == sql_result['showid']
-                                and history['season'] == sql_result['season']
-                                and history['episode'] == sql_result['episode']
-                                and history['quality'] == sql_result['quality'])
+                        and history['season'] == sql_result['season']
+                        and history['episode'] == sql_result['episode']
+                        and history['quality'] == sql_result['quality'])
                        for history in compact):
 
                 history = {}
@@ -1007,10 +1006,12 @@ class ConfigGeneral:
 
     @cherrypy.expose
     def saveGeneral(self, log_dir=None, web_port=None, web_log=None, encryption_version=None, web_ipv6=None,
-                    update_shows_on_start=None, update_frequency=None, launch_browser=None, web_username=None, use_api=None, api_key=None,
+                    update_shows_on_start=None, update_frequency=None, launch_browser=None, web_username=None,
+                    use_api=None, api_key=None, indexer_default=None, timezone_display=None, cpu_preset=None,
                     web_password=None, version_notify=None, enable_https=None, https_cert=None, https_key=None,
                     handle_reverse_proxy=None, sort_article=None, auto_update=None, proxy_setting=None,
-                    anon_redirect=None, git_path=None, calendar_unprotected=None, date_preset=None, time_preset=None, indexer_default=None,):
+                    anon_redirect=None, git_path=None, calendar_unprotected=None, date_preset=None, time_preset=None,
+                    indexer_timeout=None):
 
         results = []
 
@@ -1024,6 +1025,7 @@ class ConfigGeneral:
         config.change_UPDATE_FREQUENCY(update_frequency)
         sickbeard.LAUNCH_BROWSER = config.checkbox_to_value(launch_browser)
         sickbeard.SORT_ARTICLE = config.checkbox_to_value(sort_article)
+        sickbeard.CPU_PRESET = cpu_preset
         sickbeard.ANON_REDIRECT = anon_redirect
         sickbeard.PROXY_SETTING = proxy_setting
         sickbeard.GIT_PATH = git_path
@@ -1043,9 +1045,14 @@ class ConfigGeneral:
         if indexer_default:
             sickbeard.INDEXER_DEFAULT = config.to_int(indexer_default)
 
+        if indexer_timeout:
+            sickbeard.INDEXER_TIMEOUT = config.to_int(indexer_timeout)
+
         if time_preset:
             sickbeard.TIME_PRESET_W_SECONDS = time_preset
             sickbeard.TIME_PRESET = sickbeard.TIME_PRESET_W_SECONDS.replace(u":%S", u"")
+
+        sickbeard.TIMEZONE_DISPLAY = timezone_display
 
         if not config.change_LOG_DIR(log_dir, web_log):
             results += ["Unable to create directory " + os.path.normpath(log_dir) + ", log directory not changed."]
@@ -1090,11 +1097,12 @@ class ConfigSearch:
     def saveSearch(self, use_nzbs=None, use_torrents=None, nzb_dir=None, sab_username=None, sab_password=None,
                    sab_apikey=None, sab_category=None, sab_host=None, nzbget_username=None, nzbget_password=None,
                    nzbget_category=None, nzbget_host=None, nzbget_use_https=None, dailysearch_frequency=None,
-                   nzb_method=None, torrent_method=None, usenet_retention=None, rssupdate_frequency=None, backlog_frequency=None,
-                   download_propers=None, check_propers_interval=None, prefer_episode_releases=None, allow_high_priority=None, backlog_startup=None,
-                   torrent_dir=None, torrent_username=None, torrent_password=None, torrent_host=None, rssupdate_startup=None,
+                   nzb_method=None, torrent_method=None, usenet_retention=None, backlog_frequency=None,
+                   download_propers=None, check_propers_interval=None, allow_high_priority=None,
+                   backlog_startup=None, dailysearch_startup=None,
+                   torrent_dir=None, torrent_username=None, torrent_password=None, torrent_host=None,
                    torrent_label=None, torrent_path=None, torrent_verify_cert=None,
-                   torrent_ratio=None, torrent_seed_time=None, torrent_paused=None, torrent_high_bandwidth=None, ignore_words=None):
+                   torrent_seed_time=None, torrent_paused=None, torrent_high_bandwidth=None, ignore_words=None):
 
         results = []
 
@@ -1105,15 +1113,14 @@ class ConfigSearch:
             results += ["Unable to create directory " + os.path.normpath(torrent_dir) + ", dir not changed."]
 
         config.change_DAILYSEARCH_FREQUENCY(dailysearch_frequency)
-
-        config.change_RSSUPDATE_FREQUENCY(rssupdate_frequency)
+        config.change_BACKLOG_FREQUENCY(backlog_frequency)
 
         sickbeard.USE_NZBS = config.checkbox_to_value(use_nzbs)
         sickbeard.USE_TORRENTS = config.checkbox_to_value(use_torrents)
 
         sickbeard.NZB_METHOD = nzb_method
         sickbeard.TORRENT_METHOD = torrent_method
-        sickbeard.USENET_RETENTION = sickbeard.USENET_RETENTION = config.to_int(usenet_retention, default=500)
+        sickbeard.USENET_RETENTION = config.to_int(usenet_retention, default=500)
 
         sickbeard.IGNORE_WORDS = ignore_words if ignore_words else ""
 
@@ -1124,11 +1131,9 @@ class ConfigSearch:
             sickbeard.properFinderScheduler.silent = True
         sickbeard.CHECK_PROPERS_INTERVAL = check_propers_interval
 
-        sickbeard.PREFER_EPISODE_RELEASES = config.checkbox_to_value(prefer_episode_releases)
         sickbeard.ALLOW_HIGH_PRIORITY = config.checkbox_to_value(allow_high_priority)
 
-        config.change_BACKLOG_FREQUENCY(backlog_frequency)
-        sickbeard.RSSUPDATE_STARTUP = config.checkbox_to_value(rssupdate_startup)
+        sickbeard.DAILYSEARCH_STARTUP = config.checkbox_to_value(dailysearch_startup)
         sickbeard.BACKLOG_STARTUP = config.checkbox_to_value(backlog_startup)
 
         sickbeard.SAB_USERNAME = sab_username
@@ -1148,7 +1153,6 @@ class ConfigSearch:
         sickbeard.TORRENT_LABEL = torrent_label
         sickbeard.TORRENT_VERIFY_CERT = config.checkbox_to_value(torrent_verify_cert)
         sickbeard.TORRENT_PATH = torrent_path
-        sickbeard.TORRENT_RATIO = torrent_ratio
         sickbeard.TORRENT_SEED_TIME = torrent_seed_time
         sickbeard.TORRENT_PAUSED = config.checkbox_to_value(torrent_paused)
         sickbeard.TORRENT_HIGH_BANDWIDTH = config.checkbox_to_value(torrent_high_bandwidth)
@@ -1183,8 +1187,8 @@ class ConfigPostProcessing:
                            rename_episodes=None, airdate_episodes=None, unpack=None,
                            move_associated_files=None, tv_download_dir=None, naming_custom_abd=None,
                            naming_abd_pattern=None, naming_strip_year=None, use_failed_downloads=None,
-                           delete_failed=None, extra_scripts=None,
-                           naming_custom_sports=None, naming_sports_pattern=None):
+                           delete_failed=None, extra_scripts=None, skip_removed_files=None,
+                           naming_custom_sports=None, naming_sports_pattern=None, autopostprocesser_frequency=None):
 
         results = []
 
@@ -1192,6 +1196,7 @@ class ConfigPostProcessing:
             results += ["Unable to create directory " + os.path.normpath(tv_download_dir) + ", dir not changed."]
 
         sickbeard.PROCESS_AUTOMATICALLY = config.checkbox_to_value(process_automatically)
+        config.change_AUTOPOSTPROCESSER_FREQUENCY(autopostprocesser_frequency)
 
         if sickbeard.PROCESS_AUTOMATICALLY:
             sickbeard.autoPostProcesserScheduler.silent = False
@@ -1218,6 +1223,7 @@ class ConfigPostProcessing:
         sickbeard.NAMING_STRIP_YEAR = config.checkbox_to_value(naming_strip_year)
         sickbeard.USE_FAILED_DOWNLOADS = config.checkbox_to_value(use_failed_downloads)
         sickbeard.DELETE_FAILED = config.checkbox_to_value(delete_failed)
+        sickbeard.SKIP_REMOVED_FILES = config.checkbox_to_value(skip_removed_files)
 
         sickbeard.METADATA_XBMC = xbmc_data
         sickbeard.METADATA_XBMC_12PLUS = xbmc_12plus_data
@@ -1449,24 +1455,7 @@ class ConfigProviders:
         return '1'
 
     @cherrypy.expose
-    def saveProviders(self, newznab_string='', torrentrss_string='',
-                      omgwtfnzbs_username=None, omgwtfnzbs_apikey=None,
-                      ezrss_ratio=None,
-                      tvtorrents_digest=None, tvtorrents_hash=None, tvtorrents_ratio=None,
-                      btn_api_key=None, btn_ratio=None,
-                      thepiratebay_ratio=None, thepiratebay_trusted=None, thepiratebay_proxy=None, thepiratebay_proxy_url=None,
-                      torrentleech_username=None, torrentleech_password=None, torrentleech_ratio=None,
-                      iptorrents_username=None, iptorrents_password=None, iptorrents_ratio=None, iptorrents_freeleech=None,
-                      kat_trusted=None, kat_ratio=None, kat_verified=None,
-                      publichd_ratio=None,
-                      scc_username=None, scc_password=None, scc_ratio=None,
-                      hdtorrents_username=None, hdtorrents_password=None, hdtorrents_ratio=None,
-                      torrentday_username=None, torrentday_password=None, torrentday_ratio=None, torrentday_freeleech=None,
-                      hdbits_username=None, hdbits_passkey=None, hdbits_ratio=None,
-                      nextgen_username=None, nextgen_password=None, nextgen_ratio=None,
-                      newzbin_username=None, newzbin_password=None,
-                      speedcd_username=None, speedcd_password=None, speedcd_ratio=None, speedcd_freeleech=None,
-                      provider_order=None):
+    def saveProviders(self, newznab_string='', torrentrss_string='', provider_order=None, **kwargs):
 
         results = []
 
@@ -1502,16 +1491,10 @@ class ConfigProviders:
                         newznabProviderDict[cur_id].needs_auth = False
                     else:
                         newznabProviderDict[cur_id].needs_auth = True
-
                 else:
                     sickbeard.newznabProviderList.append(newProvider)
 
                 finishedNames.append(cur_id)
-
-            # delete anything that is missing
-            for curProvider in sickbeard.newznabProviderList:
-                if curProvider.getID() not in finishedNames:
-                    sickbeard.newznabProviderList.remove(curProvider)
 
         # delete anything that is missing
         for curProvider in sickbeard.newznabProviderList:
@@ -1545,7 +1528,6 @@ class ConfigProviders:
                 finishedNames.append(curID)
 
         # delete anything that is missing
-        #logger.log(u"sickbeard.anyRssProviderList =  " + repr(sickbeard.anyRssProviderList))
         for curProvider in sickbeard.torrentRssProviderList:
             if curProvider.getID() not in finishedNames:
                 sickbeard.torrentRssProviderList.remove(curProvider)
@@ -1555,122 +1537,155 @@ class ConfigProviders:
             curProvider, curEnabled = curProviderStr.split(':')
             curEnabled = config.to_int(curEnabled)
 
-            provider_list.append(curProvider)
+            curProvObj = [x for x in sickbeard.providers.sortedProviderList() if x.getID() == curProvider and hasattr(x, 'enabled')]
+            if curProvObj:
+                curProvObj[0].enabled = bool(curEnabled)
 
-            if curProvider == 'nzbs_org_old':
-                sickbeard.NZBS = curEnabled
-            elif curProvider == 'newzbin':
-                sickbeard.NEWZBIN = curEnabled
-            elif curProvider == 'bin_req':
-                sickbeard.BINREQ = curEnabled
-            elif curProvider == 'womble_s_index':
-                sickbeard.WOMBLE = curEnabled
-            elif curProvider == 'omgwtfnzbs':
-                sickbeard.OMGWTFNZBS = curEnabled
-            elif curProvider == 'ezrss':
-                sickbeard.EZRSS = curEnabled
-            elif curProvider == 'tvtorrents':
-                sickbeard.TVTORRENTS = curEnabled
-            elif curProvider == 'torrentleech':
-                sickbeard.TORRENTLEECH = curEnabled
-            elif curProvider == 'btn':
-                sickbeard.BTN = curEnabled
-            elif curProvider == 'thepiratebay':
-                sickbeard.THEPIRATEBAY = curEnabled
-            elif curProvider == 'torrentleech':
-                sickbeard.TORRENTLEECH = curEnabled
-            elif curProvider == 'iptorrents':
-                sickbeard.IPTORRENTS = curEnabled
-            elif curProvider == 'omgwtfnzbs':
-                sickbeard.OMGWTFNZBS = curEnabled
-            elif curProvider == 'kickasstorrents':
-                sickbeard.KAT = curEnabled
-            elif curProvider == 'publichd':
-                sickbeard.PUBLICHD = curEnabled
-            elif curProvider == 'sceneaccess':
-                sickbeard.SCC = curEnabled
-            elif curProvider == 'hdtorrents':
-                sickbeard.HDTORRENTS = curEnabled
-            elif curProvider == 'torrentday':
-                sickbeard.TORRENTDAY = curEnabled
-            elif curProvider == 'hdbits':
-                sickbeard.HDBITS = curEnabled
-            elif curProvider == 'nextgen':
-                sickbeard.NEXTGEN = curEnabled
-            elif curProvider == 'speedcd':
-                sickbeard.SPEEDCD = curEnabled
-            elif curProvider in newznabProviderDict:
+            provider_list.append(curProvider)
+            if curProvider in newznabProviderDict:
                 newznabProviderDict[curProvider].enabled = bool(curEnabled)
             elif curProvider in torrentRssProviderDict:
                 torrentRssProviderDict[curProvider].enabled = bool(curEnabled)
-            else:
-                logger.log(u"don't know what " + curProvider + " is, skipping")
 
-        sickbeard.EZRSS_RATIO = ezrss_ratio
+        # dynamically load provider settings
+        for curTorrentProvider in [curProvider for curProvider in sickbeard.providers.sortedProviderList() if
+                                   curProvider.providerType == sickbeard.GenericProvider.TORRENT]:
 
-        sickbeard.TVTORRENTS_DIGEST = tvtorrents_digest.strip()
-        sickbeard.TVTORRENTS_HASH = tvtorrents_hash.strip()
-        sickbeard.TVTORRENTS_RATIO = config.to_int(tvtorrents_ratio)
+            if hasattr(curTorrentProvider, 'minseed'):
+                try:
+                    curTorrentProvider.minseed = int(str(kwargs[curTorrentProvider.getID() + '_minseed']).strip())
+                except:
+                    curTorrentProvider.minseed = 0
 
-        sickbeard.BTN_API_KEY = btn_api_key.strip()
-        sickbeard.BTN_RATIO = btn_ratio
+            if hasattr(curTorrentProvider, 'minleech'):
+                try:
+                    curTorrentProvider.minleech = int(str(kwargs[curTorrentProvider.getID() + '_minleech']).strip())
+                except:
+                    curTorrentProvider.minleech = 0
 
-        sickbeard.THEPIRATEBAY_RATIO = thepiratebay_ratio
-        sickbeard.THEPIRATEBAY_TRUSTED = config.checkbox_to_value(thepiratebay_trusted)
+            if hasattr(curTorrentProvider, 'ratio'):
+                try:
+                    curTorrentProvider.ratio = str(kwargs[curTorrentProvider.getID() + '_ratio']).strip()
+                except:
+                    curTorrentProvider.ratio = None
 
-        thepiratebay_proxy = config.checkbox_to_value(thepiratebay_proxy)
-        if thepiratebay_proxy:
-            sickbeard.THEPIRATEBAY_PROXY_URL = thepiratebay_proxy_url.strip()
-        else:
-            sickbeard.THEPIRATEBAY_PROXY_URL = ""
+            if hasattr(curTorrentProvider, 'digest'):
+                try:
+                    curTorrentProvider.digest = str(kwargs[curTorrentProvider.getID() + '_digest']).strip()
+                except:
+                    curTorrentProvider.digest = None
 
-        sickbeard.THEPIRATEBAY_PROXY = thepiratebay_proxy
+            if hasattr(curTorrentProvider, 'hash'):
+                try:
+                    curTorrentProvider.hash = str(kwargs[curTorrentProvider.getID() + '_hash']).strip()
+                except:
+                    curTorrentProvider.hash = None
 
-        sickbeard.TORRENTLEECH_USERNAME = torrentleech_username
-        sickbeard.TORRENTLEECH_PASSWORD = torrentleech_password
-        sickbeard.TORRENTLEECH_RATIO = torrentleech_ratio
+            if hasattr(curTorrentProvider, 'api_key'):
+                try:
+                    curTorrentProvider.api_key = str(kwargs[curTorrentProvider.getID() + '_api_key']).strip()
+                except:
+                    curTorrentProvider.api_key = None
 
-        sickbeard.IPTORRENTS_USERNAME = iptorrents_username.strip()
-        sickbeard.IPTORRENTS_PASSWORD = iptorrents_password.strip()
-        sickbeard.IPTORRENTS_RATIO = iptorrents_ratio
+            if hasattr(curTorrentProvider, 'username'):
+                try:
+                    curTorrentProvider.username = str(kwargs[curTorrentProvider.getID() + '_username']).strip()
+                except:
+                    curTorrentProvider.username = None
 
-        sickbeard.IPTORRENTS_FREELEECH = config.checkbox_to_value(iptorrents_freeleech)
+            if hasattr(curTorrentProvider, 'password'):
+                try:
+                    curTorrentProvider.password = str(kwargs[curTorrentProvider.getID() + '_password']).strip()
+                except:
+                    curTorrentProvider.password = None
 
-        sickbeard.KAT_TRUSTED = config.checkbox_to_value(kat_trusted)
-        sickbeard.KAT_RATIO = kat_ratio
-        sickbeard.KAT_VERIFIED = config.checkbox_to_value(kat_verified)
+            if hasattr(curTorrentProvider, 'passkey'):
+                try:
+                    curTorrentProvider.passkey = str(kwargs[curTorrentProvider.getID() + '_passkey']).strip()
+                except:
+                    curTorrentProvider.passkey = None
 
-        sickbeard.PUBLICHD_RATIO = publichd_ratio
+            if hasattr(curTorrentProvider, 'confirmed'):
+                try:
+                    curTorrentProvider.confirmed = config.checkbox_to_value(
+                        kwargs[curTorrentProvider.getID() + '_confirmed'])
+                except:
+                    curTorrentProvider.confirmed = 0
 
-        sickbeard.TORRENTDAY_USERNAME = torrentday_username.strip()
-        sickbeard.TORRENTDAY_PASSWORD = torrentday_password.strip()
-        sickbeard.TORRENTDAY_RATIO = torrentday_ratio
+            if hasattr(curTorrentProvider, 'proxy'):
+                try:
+                    curTorrentProvider.proxy.enabled = config.checkbox_to_value(
+                        kwargs[curTorrentProvider.getID() + '_proxy'])
+                except:
+                    curTorrentProvider.proxy.enabled = 0
 
-        sickbeard.TORRENTDAY_FREELEECH = config.checkbox_to_value(torrentday_freeleech)
+                if hasattr(curTorrentProvider.proxy, 'url'):
+                    try:
+                        curTorrentProvider.proxy.url = str(kwargs[curTorrentProvider.getID() + '_proxy_url']).strip()
+                    except:
+                        curTorrentProvider.proxy.url = None
 
-        sickbeard.SCC_USERNAME = scc_username.strip()
-        sickbeard.SCC_PASSWORD = scc_password.strip()
-        sickbeard.SCC_RATIO = scc_ratio
+            if hasattr(curTorrentProvider, 'freeleech'):
+                try:
+                    curTorrentProvider.freeleech = config.checkbox_to_value(
+                        kwargs[curTorrentProvider.getID() + '_freeleech'])
+                except:
+                    curTorrentProvider.freeleech = 0
 
-        sickbeard.HDTORRENTS_USERNAME = hdtorrents_username.strip()
-        sickbeard.HDTORRENTS_PASSWORD = hdtorrents_password.strip()
-        sickbeard.HDTORRENTS_RATIO = hdtorrents_ratio
+            if hasattr(curTorrentProvider, 'search_mode'):
+                try:
+                    curTorrentProvider.search_mode = str(kwargs[curTorrentProvider.getID() + '_search_mode']).strip()
+                except:
+                    curTorrentProvider.search_mode = 'eponly'
 
-        sickbeard.HDBITS_USERNAME = hdbits_username.strip()
-        sickbeard.HDBITS_PASSKEY = hdbits_passkey.strip()
-        sickbeard.HDBITS_RATIO = hdbits_ratio
+            if hasattr(curTorrentProvider, 'search_fallback'):
+                try:
+                    curTorrentProvider.search_fallback = config.checkbox_to_value(
+                        kwargs[curTorrentProvider.getID() + '_search_fallback'])
+                except:
+                    curTorrentProvider.search_fallback = 0
 
-        sickbeard.OMGWTFNZBS_USERNAME = omgwtfnzbs_username.strip()
-        sickbeard.OMGWTFNZBS_APIKEY = omgwtfnzbs_apikey.strip()
+            if hasattr(curTorrentProvider, 'backlog_only'):
+                try:
+                    curTorrentProvider.backlog_only = config.checkbox_to_value(
+                        kwargs[curTorrentProvider.getID() + '_backlog_only'])
+                except:
+                    curTorrentProvider.backlog_only = 0
 
-        sickbeard.NEXTGEN_USERNAME = nextgen_username.strip()
-        sickbeard.NEXTGEN_PASSWORD = nextgen_password.strip()
-        sickbeard.NEXTGEN_RATIO = nextgen_ratio
+        for curNzbProvider in [curProvider for curProvider in sickbeard.providers.sortedProviderList() if
+                               curProvider.providerType == sickbeard.GenericProvider.NZB]:
 
-        sickbeard.SPEEDCD_USERNAME = speedcd_username.strip()
-        sickbeard.SPEEDCD_PASSWORD = speedcd_password.strip()
-        sickbeard.SPEEDCD_RATIO = speedcd_ratio
-        sickbeard.SPEEDCD_FREELEECH = config.checkbox_to_value(speedcd_freeleech)
+            if hasattr(curNzbProvider, 'api_key'):
+                try:
+                    curNzbProvider.api_key = str(kwargs[curNzbProvider.getID() + '_api_key']).strip()
+                except:
+                    curNzbProvider.api_key = None
+
+            if hasattr(curNzbProvider, 'username'):
+                try:
+                    curNzbProvider.username = str(kwargs[curNzbProvider.getID() + '_username']).strip()
+                except:
+                    curNzbProvider.username = None
+
+            if hasattr(curNzbProvider, 'search_mode'):
+                try:
+                    curNzbProvider.search_mode = str(kwargs[curNzbProvider.getID() + '_search_mode']).strip()
+                except:
+                    curNzbProvider.search_mode = 'eponly'
+
+            if hasattr(curNzbProvider, 'search_fallback'):
+                try:
+                    curNzbProvider.search_fallback = config.checkbox_to_value(
+                        kwargs[curNzbProvider.getID() + '_search_fallback'])
+                except:
+                    curNzbProvider.search_fallback = 0
+
+            if hasattr(curNzbProvider, 'backlog_only'):
+                try:
+                    curNzbProvider.backlog_only = config.checkbox_to_value(
+                        kwargs[curNzbProvider.getID() + '_backlog_only'])
+                except:
+                    curNzbProvider.backlog_only = 0
 
         sickbeard.NEWZNAB_DATA = '!!!'.join([x.configStr() for x in sickbeard.newznabProviderList])
         sickbeard.PROVIDER_ORDER = provider_list
@@ -1696,7 +1711,8 @@ class ConfigNotifications:
         return _munge(t)
 
     @cherrypy.expose
-    def saveNotifications(self, use_xbmc=None, xbmc_always_on=None, xbmc_notify_onsnatch=None, xbmc_notify_ondownload=None,
+    def saveNotifications(self, use_xbmc=None, xbmc_always_on=None, xbmc_notify_onsnatch=None,
+                          xbmc_notify_ondownload=None,
                           xbmc_notify_onsubtitledownload=None, xbmc_update_onlyfirst=None,
                           xbmc_update_library=None, xbmc_update_full=None, xbmc_host=None, xbmc_username=None,
                           xbmc_password=None,
@@ -2010,7 +2026,8 @@ class HomePostProcess:
         return _munge(t)
 
     @cherrypy.expose
-    def processEpisode(self, dir=None, nzbName=None, jobName=None, quiet=None, process_method=None, force=None, is_priority=None, failed="0", type="auto"):
+    def processEpisode(self, dir=None, nzbName=None, jobName=None, quiet=None, process_method=None, force=None,
+                       is_priority=None, failed="0", type="auto"):
 
         if failed == "0":
             failed = False
@@ -2030,7 +2047,8 @@ class HomePostProcess:
         if not dir:
             redirect("/home/postprocess/")
         else:
-            result = processTV.processDir(dir, nzbName, process_method=process_method, force=force, is_priority=is_priority, failed=failed, type=type)
+            result = processTV.processDir(dir, nzbName, process_method=process_method, force=force,
+                                          is_priority=is_priority, failed=failed, type=type)
             if quiet is not None and int(quiet) == 1:
                 return result
 
@@ -2077,13 +2095,13 @@ class NewHomeAddShows:
             lINDEXER_API_PARMS['custom_ui'] = classes.AllShowsListUI
             t = sickbeard.indexerApi(indexer).indexer(**lINDEXER_API_PARMS)
 
-            logger.log("Searching for Show with searchterm: %s on Indexer: %s" % (search_term, sickbeard.indexerApi(indexer).name), logger.DEBUG)
+            logger.log("Searching for Show with searchterm: %s on Indexer: %s" % (
+            search_term, sickbeard.indexerApi(indexer).name), logger.DEBUG)
             try:
                 # add search results
                 results.setdefault(indexer, []).extend(t[search_term])
             except Exception, e:
                 continue
-
 
         map(final_results.extend,
             ([[sickbeard.indexerApi(id).name, id, sickbeard.indexerApi(id).config["show_url"], int(show['id']),
@@ -2157,7 +2175,7 @@ class NewHomeAddShows:
 
                 # default to TVDB if indexer was not detected
                 if show_name and not (indexer and indexer_id):
-                    (sn,idx,id) = helpers.searchIndexerForShowID(show_name, indexer, indexer_id)
+                    (sn, idx, id) = helpers.searchIndexerForShowID(show_name, indexer, indexer_id)
 
                     # set indexer and indexer_id from found info
                     if indexer is None and idx:
@@ -2269,7 +2287,8 @@ class NewHomeAddShows:
         series_pieces = whichSeries.split('|')
         if (whichSeries and rootDir) or (whichSeries and fullShowPath and len(series_pieces) > 1):
             if len(series_pieces) < 6:
-                logger.log("Unable to add show due to show selection. Not anough arguments: %s" % (repr(series_pieces)), logger.ERROR)
+                logger.log("Unable to add show due to show selection. Not anough arguments: %s" % (repr(series_pieces)),
+                           logger.ERROR)
                 ui.notifications.error("Unknown error. Unable to add show due to problem with show selection.")
                 redirect('/home/addShows/existingShows/')
             indexer = int(series_pieces[1])
@@ -2790,7 +2809,7 @@ class Home:
         threading.Timer(2, sickbeard.invoke_shutdown).start()
 
         title = "Shutting down"
-        message = "Sick Beard is shutting down..."
+        message = "SickRage is shutting down..."
 
         return _genericMessage(title, message)
 
@@ -2950,7 +2969,8 @@ class Home:
     @cherrypy.expose
     def editShow(self, show=None, location=None, anyQualities=[], bestQualities=[], exceptions_list=[],
                  flatten_folders=None, paused=None, directCall=False, air_by_date=None, sports=None, dvdorder=None,
-                 indexerLang=None,subtitles=None, archive_firstmatch=None, rls_ignore_words=None, rls_require_words=None):
+                 indexerLang=None, subtitles=None, archive_firstmatch=None, rls_ignore_words=None,
+                 rls_require_words=None):
 
         if show is None:
             errString = "Invalid show ID: " + str(show)
@@ -3030,15 +3050,17 @@ class Home:
                     errors.append("Unable to refresh this show: " + ex(e))
 
             showObj.paused = paused
-            showObj.air_by_date = air_by_date
-            showObj.sports = sports
-            showObj.subtitles = subtitles
-            showObj.lang = indexer_lang
-            showObj.dvdorder = dvdorder
-            showObj.archive_firstmatch = archive_firstmatch
 
-            showObj.rls_ignore_words = rls_ignore_words
-            showObj.rls_require_words = rls_require_words
+            # if this routine was called via the mass edit, do not change the options that are not passed
+            if not directCall:
+                showObj.air_by_date = air_by_date
+                showObj.sports = sports
+                showObj.subtitles = subtitles
+                showObj.lang = indexer_lang
+                showObj.dvdorder = dvdorder
+                showObj.archive_firstmatch = archive_firstmatch
+                showObj.rls_ignore_words = rls_ignore_words.strip()
+                showObj.rls_require_words = rls_require_words.strip()
 
             # if we change location clear the db of episodes, change it, write to db, and rescan
             if os.path.normpath(showObj._location) != os.path.normpath(location):
@@ -3060,7 +3082,7 @@ class Home:
                             # rescan the episodes in the new folder
                     except exceptions.NoNFOException:
                         errors.append(
-                            "The folder at <tt>%s</tt> doesn't contain a tvshow.nfo - copy your files to that folder before you change the directory in Sick Beard." % location)
+                            "The folder at <tt>%s</tt> doesn't contain a tvshow.nfo - copy your files to that folder before you change the directory in SickRage." % location)
 
             # save it to the DB
             showObj.saveToDB()
@@ -3069,14 +3091,14 @@ class Home:
         if do_update:
             try:
                 sickbeard.showQueueScheduler.action.updateShow(showObj, True)  # @UndefinedVariable
-                time.sleep(1)
+                time.sleep(cpu_presets[sickbeard.CPU_PRESET])
             except exceptions.CantUpdateException, e:
                 errors.append("Unable to force an update on the show.")
 
         if do_update_exceptions:
             try:
                 scene_exceptions.update_scene_exceptions(showObj.indexerid, exceptions_list)  # @UndefinedVariable
-                time.sleep(1)
+                time.sleep(cpu_presets[sickbeard.CPU_PRESET])
             except exceptions.CantUpdateException, e:
                 errors.append("Unable to force an update on scene exceptions of the show.")
 
@@ -3127,7 +3149,7 @@ class Home:
             ui.notifications.error("Unable to refresh this show.",
                                    ex(e))
 
-        time.sleep(3)
+        time.sleep(cpu_presets[sickbeard.CPU_PRESET])
 
         redirect("/home/displayShow?show=" + str(showObj.indexerid))
 
@@ -3150,7 +3172,7 @@ class Home:
                                    ex(e))
 
         # just give it some time
-        time.sleep(3)
+        time.sleep(cpu_presets[sickbeard.CPU_PRESET])
 
         redirect("/home/displayShow?show=" + str(showObj.indexerid))
 
@@ -3168,7 +3190,7 @@ class Home:
         # search and download subtitles
         sickbeard.showQueueScheduler.action.downloadSubtitles(showObj, bool(force))  # @UndefinedVariable
 
-        time.sleep(3)
+        time.sleep(cpu_presets[sickbeard.CPU_PRESET])
 
         redirect("/home/displayShow?show=" + str(showObj.indexerid))
 
@@ -3422,7 +3444,7 @@ class Home:
 
         # wait until the queue item tells us whether it worked or not
         while ep_queue_item.success is None:  # @UndefinedVariable
-            time.sleep(1)
+            time.sleep(cpu_presets[sickbeard.CPU_PRESET])
 
         # return the correct json value
         if ep_queue_item.success:
@@ -3513,13 +3535,16 @@ class Home:
         if isinstance(ep_obj, str):
             return json.dumps({'result': 'failure'})
 
+        # create failed segment
+        segment = {season:[ep_obj]}
+        
         # make a queue item for it and put it on the queue
-        ep_queue_item = search_queue.FailedQueueItem(ep_obj.show, [ep_obj])
+        ep_queue_item = search_queue.FailedQueueItem(ep_obj.show, segment)
         sickbeard.searchQueueScheduler.action.add_item(ep_queue_item)  # @UndefinedVariable
 
         # wait until the queue item tells us whether it worked or not
         while ep_queue_item.success is None:  # @UndefinedVariable
-            time.sleep(1)
+            time.sleep(cpu_presets[sickbeard.CPU_PRESET])
 
         # return the correct json value
         if ep_queue_item.success:
@@ -3536,6 +3561,7 @@ class Home:
             })
 
         return json.dumps({'result': 'failure'})
+
 
 class UI:
     @cherrypy.expose
@@ -3755,8 +3781,8 @@ class WebInterface:
         # Create a iCal string
         ical = 'BEGIN:VCALENDAR\r\n'
         ical += 'VERSION:2.0\r\n'
-        ical += 'X-WR-CALNAME:Sick Beard\r\n'
-        ical += 'X-WR-CALDESC:Sick Beard\r\n'
+        ical += 'X-WR-CALNAME:SickRage\r\n'
+        ical += 'X-WR-CALDESC:SickRage\r\n'
         ical += 'PRODID://Sick-Beard Upcoming Episodes//\r\n'
 
         # Get shows info
@@ -3779,13 +3805,16 @@ class WebInterface:
 
             for episode in episode_list:
 
-                air_date_time = network_timezones.parse_date_time(episode['airdate'], show["airs"], show['network']).astimezone(utc)
-                air_date_time_end = air_date_time + datetime.timedelta(minutes=helpers.tryInt(show["runtime"],60))
+                air_date_time = network_timezones.parse_date_time(episode['airdate'], show["airs"],
+                                                                  show['network']).astimezone(utc)
+                air_date_time_end = air_date_time + datetime.timedelta(minutes=helpers.tryInt(show["runtime"], 60))
 
                 # Create event for episode
                 ical = ical + 'BEGIN:VEVENT\r\n'
-                ical = ical + 'DTSTART:' + air_date_time.strftime("%Y%m%d") + 'T' + air_date_time.strftime("%H%M%S") + 'Z\r\n'
-                ical = ical + 'DTEND:' + air_date_time_end.strftime("%Y%m%d") + 'T' + air_date_time_end.strftime("%H%M%S") + 'Z\r\n'
+                ical = ical + 'DTSTART:' + air_date_time.strftime("%Y%m%d") + 'T' + air_date_time.strftime(
+                    "%H%M%S") + 'Z\r\n'
+                ical = ical + 'DTEND:' + air_date_time_end.strftime("%Y%m%d") + 'T' + air_date_time_end.strftime(
+                    "%H%M%S") + 'Z\r\n'
                 ical = ical + 'SUMMARY:' + show['show_name'] + ': ' + episode['name'] + '\r\n'
                 ical = ical + 'UID:Sick-Beard-' + str(datetime.date.today().isoformat()) + '-' + show[
                     'show_name'].replace(" ", "-") + '-E' + str(episode['episode']) + 'S' + str(

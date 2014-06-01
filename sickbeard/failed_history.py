@@ -1,20 +1,20 @@
 # Author: Tyler Fenby <tylerfenby@gmail.com>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import re
 import urllib
@@ -55,9 +55,7 @@ def logFailed(release):
 
     if len(sql_results) == 0:
         logger.log(
-            u"Release not found in snatch history. Recording it as bad with no size and no proivder.", logger.WARNING)
-        logger.log(
-            u"Future releases of the same name from providers that don't return size will be skipped.", logger.WARNING)
+            u"Release not found in snatch history.", logger.WARNING)
     elif len(sql_results) > 1:
         logger.log(u"Multiple logged snatches found for release", logger.WARNING)
         sizes = len(set(x["size"] for x in sql_results))
@@ -109,10 +107,9 @@ def hasFailed(release, size, provider="%"):
     myDB = db.DBConnection("failed.db")
     sql_results = myDB.select(
         "SELECT * FROM failed WHERE release=? AND size=? AND provider LIKE ?",
-        [prepareFailedName(release), size, provider])
+        [release, size, provider])
 
     return (len(sql_results) > 0)
-
 
 def revertEpisode(epObj):
     """Restore the episodes of a failed download to their original state"""

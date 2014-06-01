@@ -1,20 +1,20 @@
 # Author: seedboy
 # URL: https://github.com/seedboy
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import time
 import re
@@ -23,7 +23,7 @@ import datetime
 import urlparse
 import sickbeard
 import generic
-from sickbeard.common import Quality
+from sickbeard.common import Quality, cpu_presets
 from sickbeard import logger
 from sickbeard import tvcache
 from sickbeard import db
@@ -53,6 +53,12 @@ class IPTorrentsProvider(generic.TorrentProvider):
 
         self.supportsBacklog = True
 
+        self.enabled = False
+        self.username = None
+        self.password = None
+        self.ratio = None
+        self.freeleech = False
+
         self.cache = IPTorrentsCache(self)
 
         self.url = self.urls['base_url']
@@ -60,7 +66,7 @@ class IPTorrentsProvider(generic.TorrentProvider):
         self.categorie = 'l73=1&l78=1&l66=1&l65=1&l79=1&l5=1&l4=1'
 
     def isEnabled(self):
-        return sickbeard.IPTORRENTS
+        return self.enabled
 
     def imageName(self):
         return 'iptorrents.png'
@@ -72,8 +78,8 @@ class IPTorrentsProvider(generic.TorrentProvider):
 
     def _doLogin(self):
 
-        login_params = {'username': sickbeard.IPTORRENTS_USERNAME,
-                        'password': sickbeard.IPTORRENTS_PASSWORD,
+        login_params = {'username': self.username,
+                        'password': self.password,
                         'login': 'submit',
         }
 
@@ -96,7 +102,7 @@ class IPTorrentsProvider(generic.TorrentProvider):
         search_string = {'Season': []}
         for show_name in set(show_name_helpers.allPossibleShowNames(self.show)):
             if ep_obj.show.air_by_date or ep_obj.show.sports:
-                ep_string = show_name + str(ep_obj.airdate)[:7]
+                ep_string = show_name + str(ep_obj.airdate).split('-')[0]
             else:
                 ep_string = show_name + ' S%02d' % int(ep_obj.scene_season)  #1) showName SXX
 
@@ -137,7 +143,7 @@ class IPTorrentsProvider(generic.TorrentProvider):
         results = []
         items = {'Season': [], 'Episode': [], 'RSS': []}
 
-        freeleech = '&free=on' if sickbeard.IPTORRENTS_FREELEECH else ''
+        freeleech = '&free=on' if self.freeleech else ''
 
         if not self._doLogin():
             return []
@@ -256,6 +262,7 @@ class IPTorrentsProvider(generic.TorrentProvider):
 
         for sqlshow in sqlResults:
             self.show = curshow = helpers.findCertainShow(sickbeard.showList, int(sqlshow["showid"]))
+            if not self.show: continue
             curEp = curshow.getEpisode(int(sqlshow["season"]), int(sqlshow["episode"]))
             searchString = self._get_episode_search_strings(curEp, add_string='PROPER|REPACK')
 
@@ -266,8 +273,7 @@ class IPTorrentsProvider(generic.TorrentProvider):
         return results
 
     def seedRatio(self):
-        return sickbeard.IPTORRENTS_RATIO
-
+        return self.ratio
 
 class IPTorrentsCache(tvcache.TVCache):
     def __init__(self, provider):
@@ -279,6 +285,10 @@ class IPTorrentsCache(tvcache.TVCache):
 
     def updateCache(self):
 
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
+
         if not self.shouldUpdate():
             return
 
@@ -289,9 +299,6 @@ class IPTorrentsCache(tvcache.TVCache):
             self.setLastUpdate()
         else:
             return []
-
-        logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-        self._clearCache()
 
         cl = []
         for result in rss_results:

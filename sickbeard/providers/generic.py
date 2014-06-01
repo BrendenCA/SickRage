@@ -2,20 +2,20 @@
 # Author: Nic Wolfe <nic@wolfeden.ca>
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import with_statement
 
@@ -31,7 +31,7 @@ import sickbeard
 from lib import requests
 from lib.feedparser import feedparser
 from sickbeard import helpers, classes, logger, db
-from sickbeard.common import MULTI_EP_RESULT, SEASON_RESULT  #, SEED_POLICY_TIME, SEED_POLICY_RATIO
+from sickbeard.common import MULTI_EP_RESULT, SEASON_RESULT, cpu_presets
 from sickbeard import tvcache
 from sickbeard import encodingKludge as ek
 from sickbeard.exceptions import ex
@@ -52,8 +52,13 @@ class GenericProvider:
         self.url = ''
 
         self.show = None
+
         self.supportsBacklog = False
 
+        self.search_mode = None
+        self.search_fallback = False
+        self.backlog_only = False
+        
         self.cache = tvcache.TVCache(self)
 
         self.session = requests.session()
@@ -180,8 +185,8 @@ class GenericProvider:
 
         return True
 
-    def searchRSS(self):
-        return self.cache.findNeededEpisodes()
+    def searchRSS(self, episodes):
+        return self.cache.findNeededEpisodes(episodes)
 
     def getQuality(self, item):
         """
@@ -223,51 +228,57 @@ class GenericProvider:
 
         return (title, url)
 
-    def findSearchResults(self, show, season, episodes, seasonSearch=False, manualSearch=False):
+    def findSearchResults(self, show, season, episodes, search_mode, manualSearch=False):
 
         self._checkAuth()
         self.show = show
 
         results = {}
         searchItems = {}
-        itemList = []
 
+        searched_scene_season = None
         for epObj in episodes:
+            itemList = []
+
+            if search_mode == 'sponly' and searched_scene_season:
+                if searched_scene_season == epObj.scene_season:
+                    continue
+
+            # mark season searched for season pack searches so we can skip later on
+            searched_scene_season = epObj.scene_season
+
             if not epObj.show.air_by_date:
                 if epObj.scene_season == 0 or epObj.scene_episode == 0:
                     logger.log(
                         u"Incomplete Indexer <-> Scene mapping detected for " + epObj.prettyName() + ", skipping search!")
                     continue
 
-            cacheResult = self.cache.searchCache(epObj, manualSearch)
-            if len(cacheResult):
-                results.update({epObj.episode:cacheResult[epObj]})
-                continue
+            #cacheResult = self.cache.searchCache([epObj], manualSearch)
+            #if len(cacheResult):
+            #    results.update({epObj.episode:cacheResult[epObj]})
+            #    continue
 
-            if seasonSearch:
+            if search_mode == 'sponly':
                 for curString in self._get_season_search_strings(epObj):
                     itemList += self._doSearch(curString, len(episodes))
-            for curString in self._get_episode_search_strings(epObj):
-                itemList += self._doSearch(curString, len(episodes))
+            else:
+                for curString in self._get_episode_search_strings(epObj):
+                    itemList += self._doSearch(curString, len(episodes))
 
             # next episode if no search results
-            if not itemList:
+            if not len(itemList):
                 continue
 
             # remove duplicate items
-            itemList = [i for n, i in enumerate(itemList) if i not in itemList[n + 1:]]
-
-            if epObj.episode in searchItems:
-                searchItems[epObj] += itemList
-            else:
-                searchItems[epObj] = itemList
+            #itemList = [i for n, i in enumerate(itemList) if i not in itemList[n + 1:]]
+            searchItems[epObj] = itemList
 
         # if we have cached results return them.
-        if len(results):
-            return results
+        #if len(results):
+        #    return results
 
-        for ep_obj, items in searchItems.items():
-            for item in items:
+        for ep_obj in searchItems:
+            for item in searchItems[ep_obj]:
 
                 (title, url) = self._get_title_and_url(item)
 
@@ -276,12 +287,21 @@ class GenericProvider:
                 # parse the file name
                 try:
                     myParser = NameParser(False)
-                    parse_result = myParser.parse(title).convert()
+                    parse_result = myParser.parse(title)
                 except InvalidNameException:
                     logger.log(u"Unable to parse the filename " + title + " into a valid episode", logger.WARNING)
                     continue
 
+                # scene -> indexer numbering
+                parse_result = parse_result.convert(self.show)
+
                 if not (self.show.air_by_date or self.show.sports):
+                    if search_mode == 'sponly' and len(parse_result.episode_numbers):
+                        logger.log(
+                            u"This is supposed to be a season pack search but the result " + title + " is not a valid season pack, skipping it",
+                            logger.DEBUG)
+                        continue
+
                     if not len(parse_result.episode_numbers) and (
                                     parse_result.season_number != None and parse_result.season_number != ep_obj.season) or (
                                     parse_result.season_number == None and ep_obj.season != 1):
@@ -295,7 +315,7 @@ class GenericProvider:
                         continue
 
                     # we just use the existing info for normal searches
-                    actual_season = season
+                    actual_season = ep_obj.season
                     actual_episodes = parse_result.episode_numbers
                 else:
                     if not (parse_result.air_by_date or parse_result.sports):

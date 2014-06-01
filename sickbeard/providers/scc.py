@@ -2,20 +2,20 @@
 # Modified by jkaberg, https://github.com/jkaberg for SceneAccess
 # URL: http://code.google.com/p/sickbeard/
 #
-# This file is part of Sick Beard.
+# This file is part of SickRage.
 #
-# Sick Beard is free software: you can redistribute it and/or modify
+# SickRage is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Sick Beard is distributed in the hope that it will be useful,
+# SickRage is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Sick Beard.  If not, see <http://www.gnu.org/licenses/>.
+# along with SickRage.  If not, see <http://www.gnu.org/licenses/>.
 
 import time
 import re
@@ -24,7 +24,7 @@ import datetime
 import urlparse
 import sickbeard
 import generic
-from sickbeard.common import Quality
+from sickbeard.common import Quality, cpu_presets
 from sickbeard import logger
 from sickbeard import tvcache
 from sickbeard import db
@@ -58,6 +58,13 @@ class SCCProvider(generic.TorrentProvider):
 
         self.supportsBacklog = True
 
+        self.enabled = False
+        self.username = None
+        self.password = None
+        self.ratio = None
+        self.minseed = None
+        self.minleech = None
+
         self.cache = SCCCache(self)
 
         self.url = self.urls['base_url']
@@ -67,7 +74,7 @@ class SCCProvider(generic.TorrentProvider):
         self.headers = {'user-agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/32.0.1700.107 Safari/537.36'}
 
     def isEnabled(self):
-        return sickbeard.SCC
+        return self.enabled
 
     def imageName(self):
         return 'scc.png'
@@ -79,8 +86,8 @@ class SCCProvider(generic.TorrentProvider):
 
     def _doLogin(self):
 
-        login_params = {'username': sickbeard.SCC_USERNAME,
-                        'password': sickbeard.SCC_PASSWORD,
+        login_params = {'username': self.username,
+                        'password': self.password,
                         'submit': 'come on in',
         }
 
@@ -105,7 +112,7 @@ class SCCProvider(generic.TorrentProvider):
         search_string = {'Season': []}
         for show_name in set(show_name_helpers.allPossibleShowNames(self.show)):
             if ep_obj.show.air_by_date or ep_obj.show.sports:
-                ep_string = show_name + str(ep_obj.airdate)[:7]
+                ep_string = show_name + str(ep_obj.airdate).split('-')[0]
             else:
                 ep_string = show_name + ' S%02d' % int(ep_obj.scene_season)  #1) showName SXX
 
@@ -162,6 +169,8 @@ class SCCProvider(generic.TorrentProvider):
                 if isinstance(search_string, unicode):
                     search_string = unidecode(search_string)
 
+                nonsceneSearchURL = None
+                foreignSearchURL = None
                 if mode == 'Season':
                     searchURL = self.urls['archive'] % (search_string)
                     data = [self.getURL(searchURL, headers=self.headers)]
@@ -217,7 +226,7 @@ class SCCProvider(generic.TorrentProvider):
                             except (AttributeError, TypeError):
                                 continue
 
-                            if mode != 'RSS' and seeders == 0:
+                            if mode != 'RSS' and (seeders == 0 or seeders < self.minseed or leechers < self.minleech):
                                 continue
 
                             if not title or not download_url:
@@ -295,6 +304,7 @@ class SCCProvider(generic.TorrentProvider):
 
         for sqlshow in sqlResults:
             self.show = curshow = helpers.findCertainShow(sickbeard.showList, int(sqlshow["showid"]))
+            if not self.show: continue
             curEp = curshow.getEpisode(int(sqlshow["season"]), int(sqlshow["episode"]))
 
             searchString = self._get_episode_search_strings(curEp, add_string='PROPER|REPACK')
@@ -306,7 +316,7 @@ class SCCProvider(generic.TorrentProvider):
         return results
 
     def seedRatio(self):
-        return sickbeard.SCC_RATIO
+        return self.ratio
 
 
 class SCCCache(tvcache.TVCache):
@@ -319,6 +329,10 @@ class SCCCache(tvcache.TVCache):
 
     def updateCache(self):
 
+        # delete anything older then 7 days
+        logger.log(u"Clearing " + self.provider.name + " cache")
+        self._clearCache()
+
         if not self.shouldUpdate():
             return
 
@@ -329,9 +343,6 @@ class SCCCache(tvcache.TVCache):
             self.setLastUpdate()
         else:
             return []
-
-        logger.log(u"Clearing " + self.provider.name + " cache and updating with new information")
-        self._clearCache()
 
         cl = []
         for result in rss_results:
